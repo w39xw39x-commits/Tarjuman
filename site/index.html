@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ترجمان — ترجمة فورية للقنوات والأفلام</title>
+<link rel="icon" href="icon.svg">
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;color:#fff;background:linear-gradient(135deg,#0B1022,#121A3A 55%,#0A2A33)}
+  main{max-width:520px;padding:32px;text-align:center}
+  img{width:140px;height:140px}
+  h1{margin:8px 0 4px;font-size:40px}
+  p{color:#C3C9E6;line-height:1.7;margin:0 0 24px}
+  a.btn{display:inline-block;padding:16px 40px;border-radius:16px;background:#FFC94A;color:#10142E;font-weight:800;font-size:20px;text-decoration:none}
+  a.btn:focus,a.btn:hover{outline:3px solid #fff}
+  small{display:block;margin-top:18px;color:#A9B1D6}
+</style>
+</head>
+<body>
+<main>
+  <img src="icon.svg" alt="شعار ترجمان">
+  <h1>ترجمان</h1>
+  <p>ترجمة فورية لأي قناة أو فيلم أو مسلسل أو IPTV على الرسيفر، متزامنة مع الكلام، وتتحكم فيها بزر واحد من الريموت.</p>
+  <a class="btn" href="Tarjuman.apk">تحميل التطبيق</a>
+  <small id="v"></small>
+</main>
+<script>
+fetch('version.json',{cache:'no-store'}).then(r=>r.json()).then(j=>{document.getElementById('v').textContent='الإصدار '+j.versionName}).catch(()=>{});
+</script>
+</body>
+</html>
