@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">ترجمان</string>
+    <string name="a11y_desc">تسمح لزر الريموت بتشغيل وإيقاف الترجمة، وتعرض الترجمة فوق القنوات. لا تقرأ محتوى الشاشة.</string>
+</resources>
