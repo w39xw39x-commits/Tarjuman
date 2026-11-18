@@ -60,7 +60,7 @@ jobs:
       - name: Build release APK
         run: >
           gradle :app:assembleRelease --no-daemon
-          -PGROQ_KEY="${{ secrets.GROQ_API_KEY }}"
+          -PGROQ_KEY="${{ secrets.GEMINI_API_KEY }}"
           -PBUILD_NUMBER=$((100 + ${{ github.run_number }}))
 
       - name: Put APK + version.json into site/
