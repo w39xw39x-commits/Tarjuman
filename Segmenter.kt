@@ -49,6 +49,7 @@ class Segmenter(private val mode: Mode, private val emit: (Segment) -> Unit) {
         noise = if (speech) noise * 0.9995 + rms * 0.0005 else noise * 0.97 + rms * 0.03
         noise = noise.coerceIn(25.0, 2500.0)
         val now = SystemClock.elapsedRealtime()
+        SpeechActivity.add(now, speech)
 
         if (!active) {
             pre.addLast(Triple(frame, rms, speech))
@@ -117,4 +118,41 @@ class Segmenter(private val mode: Mode, private val emit: (Segment) -> Unit) {
             speechRun = 0
         }
     }
+}
+
+/**
+ * When speech is happening, in 100 ms steps, for the last 2 minutes (device clock).
+ * Used to line subtitle files up with the actors' voices precisely, on the device.
+ */
+object SpeechActivity {
+    const val BIN = 100L
+    private const val MAX = 1200
+    private val bins = ArrayDeque<Float>()
+    private var lastBin = -1L        // index (time / BIN) of the newest closed bin
+    private var curBin = -1L
+    private var curCount = 0
+    private var curSpeech = 0
+
+    @Synchronized fun add(t: Long, speech: Boolean) {
+        val b = t / BIN
+        if (curBin < 0) curBin = b
+        if (b < curBin) return
+        while (b > curBin) {
+            bins.addLast(if (curCount > 0) curSpeech.toFloat() / curCount else 0f)
+            if (bins.size > MAX) bins.removeFirst()
+            lastBin = curBin
+            curBin++; curCount = 0; curSpeech = 0
+            if (b - curBin > MAX) { bins.clear(); curBin = b }
+        }
+        curCount++
+        if (speech) curSpeech++
+    }
+
+    /** (index of the first bin, values) */
+    @Synchronized fun snapshot(): Pair<Long, FloatArray> {
+        val arr = bins.toFloatArray()
+        return Pair(lastBin - arr.size + 1, arr)
+    }
+
+    @Synchronized fun reset() { bins.clear(); lastBin = -1; curBin = -1; curCount = 0; curSpeech = 0 }
 }
