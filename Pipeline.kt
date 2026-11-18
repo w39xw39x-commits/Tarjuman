@@ -47,7 +47,11 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
     @Volatile private var closed = false
 
     /** Ready-made subtitles in perfect sync, when the programme is recognised. */
-    private val sync = SubtitleSync(app, overlay, ai)
+    private val sync = SubtitleSync(app, overlay, ai) {
+        // the subtitle file owns the screen now: drop every live line still waiting
+        ui.removeCallbacksAndMessages(null)
+        overlay?.hideSubtitle()
+    }
 
     init {
         pool.execute { ai.warmUp() }
@@ -173,7 +177,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
             var dur = max(c.spokenDur + 450, minRead)
             if (nextAt != null) dur = min(dur, max(nextAt - at - 60, 700L))
             dur = min(dur, 7000L)
-            ui.postDelayed({ if (!closed) overlay?.show(c.text, dur) }, max(0L, at - now))
+            ui.postDelayed({ if (!closed && !sync.showing) overlay?.show(c.text, dur) }, max(0L, at - now))
         }
     }
 
@@ -186,7 +190,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
                 if (tr.isBlank() || tr == "-" || closed) return@execute
                 val shown = "«" + tr + "»"
                 val dur = min(9000L, max(3500L, 1200L + shown.length * 55L))
-                overlay?.show(shown, dur)
+                if (!sync.showing) overlay?.show(shown, dur)
             } catch (e: Exception) { onError(e) }
         }
     }

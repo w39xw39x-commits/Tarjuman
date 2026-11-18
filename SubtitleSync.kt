@@ -29,7 +29,13 @@ class FileCue(val startMs: Long, val endMs: Long, val text: String)
  *
  * When nothing is found (live shows, news, documentaries without files) the live translation is used.
  */
-class SubtitleSync(ctx: Context, private val overlay: SubtitleOverlay?, private val ai: AiClient) {
+class SubtitleSync(
+    ctx: Context,
+    private val overlay: SubtitleOverlay?,
+    private val ai: AiClient,
+    /** called when a subtitle file takes over the screen (live lines must stop) */
+    private val onTakeOver: () -> Unit,
+) {
     companion object {
         @Volatile var current: SubtitleSync? = null
             private set
@@ -125,7 +131,7 @@ class SubtitleSync(ctx: Context, private val overlay: SubtitleOverlay?, private 
 
     private fun confirm(now: Long) {
         lastConfirmAt = now; misses = 0
-        if (state == State.LOST && cues.isNotEmpty()) { state = State.LOCKED; startTicker() }
+        if (state == State.LOST && cues.isNotEmpty()) { state = State.LOCKED; onTakeOver(); startTicker() }
     }
 
     private fun onMiss() {
@@ -165,6 +171,8 @@ class SubtitleSync(ctx: Context, private val overlay: SubtitleOverlay?, private 
             cues = f; needsTranslation = translate; translated.clear(); deltas.clear()
             state = State.LOCKED; lastConfirmAt = SystemClock.elapsedRealtime(); misses = 0
         }
+        onTakeOver()
+        lockedAt = SystemClock.elapsedRealtime()
         overlay?.flash("✓ ترجمة جاهزة: $name", 3500)
         startTicker()
     }
@@ -232,8 +240,59 @@ class SubtitleSync(ctx: Context, private val overlay: SubtitleOverlay?, private 
                 shownIdx = -1
             }
             if (needsTranslation) translateAhead(list, v)
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastAlignAt > 8000 && now - lockedAt > 25000) {
+                lastAlignAt = now
+                io.execute { try { autoAlign() } catch (e: Exception) { Log.w("Tarjuman", "align", e) } }
+            }
             ui.postDelayed(this, 80)
         }
+    }
+
+    @Volatile private var lockedAt = 0L
+    @Volatile private var lastAlignAt = 0L
+
+    /**
+     * Precise sync on the device: slides the subtitle timeline -6..+6 s over the last ~90 s of
+     * detected speech and keeps the shift where speech and subtitle lines overlap best.
+     */
+    private fun autoAlign() {
+        if (state != State.LOCKED) return
+        val (firstBin, act) = SpeechActivity.snapshot()
+        val n = minOf(act.size, 900)
+        if (n < 250) return
+        val a = act.copyOfRange(act.size - n, act.size)
+        val start = firstBin + (act.size - n)
+        val mean = a.average().toFloat()
+        if (mean < 0.08f || mean > 0.92f) return          // silence or wall of music: no information
+        val list = cues
+        val off = offsetMs
+        val B = SpeechActivity.BIN
+        val maxShift = 60                                  // x 100 ms = 6 s
+        // subtitle occupancy for film times covering every tested shift
+        val filmFrom = start * B - off - maxShift * B
+        val len = n + 2 * maxShift
+        val occ = FloatArray(len)
+        var ci = Srt.indexAt(list, filmFrom).coerceAtLeast(0)
+        for (k in 0 until len) {
+            val ft = filmFrom + k * B
+            while (ci < list.size - 1 && list[ci].endMs < ft) ci++
+            val c = list.getOrNull(ci)
+            occ[k] = if (c != null && c.startMs <= ft && ft < c.endMs) 1f else 0f
+        }
+        val om = occ.average().toFloat()
+        fun score(shift: Int): Double {
+            var sc = 0.0
+            // device bin i  ->  film time (start+i)*B - (off + shift*B)  ->  occ index i + maxShift - shift
+            for (i in 0 until n) sc += (a[i] - mean) * (occ[i + maxShift - shift] - om)
+            return sc
+        }
+        var best = 0; var bestSc = score(0); val zero = bestSc
+        for (sh in -maxShift..maxShift) { val v = score(sh); if (v > bestSc) { bestSc = v; best = sh } }
+        if (best == 0 || bestSc <= 0) return
+        if (bestSc < zero * 1.12 + 2.0) return              // not clearly better: keep
+        val move = best * B
+        synchronized(this) { offsetMs += if (kotlin.math.abs(move) > 1500) move / 2 else move }
     }
 
     private fun startTicker() { ui.removeCallbacks(tick); ui.post(tick) }
