@@ -187,7 +187,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
                 pausedUntil = now + e.retryAfterSec * 1000L
                 "تم بلوغ حد الاستخدام المجاني مؤقتاً… سيستأنف تلقائياً"
             }
-            e is HttpError && (e.code == 401 || e.code == 403) -> "مفتاح Gemini غير صحيح"
+            e is HttpError && (e.code == 401 || e.code == 403) -> "تعذّر تشغيل الترجمة — حدّث التطبيق"
             e is HttpError -> "خطأ من الخادم (${e.code})"
             e is IOException -> "تحقق من اتصال الإنترنت"
             else -> null
