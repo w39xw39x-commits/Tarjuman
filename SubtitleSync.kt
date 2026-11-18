@@ -56,6 +56,10 @@ class SubtitleSync(
 
     private var mediaId: String? = null          // imdb[:season:episode]
     @Volatile private var cues: List<FileCue> = emptyList()
+    /** original-language lines of the same film, only to recognise "this is still the film" */
+    @Volatile private var matchCues: List<FileCue> = emptyList()
+    @Volatile private var liveMiss = 0
+    @Volatile private var lostAt = 0L
     @Volatile private var needsTranslation = false
     private val translated = ConcurrentHashMap<Int, String>()
     @Volatile private var offsetMs = 0L          // device time = film time + offset
@@ -73,6 +77,10 @@ class SubtitleSync(
     val enabled: Boolean get() = key.isNotBlank() && Prefs.readySubs(app)
     val showing: Boolean get() = state == State.LOCKED && cues.isNotEmpty()
 
+    /** An ad break (or pause) inside a recognised film: show nothing at all, wait for the film. */
+    val inBreak: Boolean get() = state == State.LOST && cues.isNotEmpty() &&
+        SystemClock.elapsedRealtime() - lostAt < 4 * 60000
+
     init { current = this }
 
     // ------------------------------------------------------------------ input from the live pipeline
@@ -84,12 +92,12 @@ class SubtitleSync(
     fun observe(heard: List<Pair<String, Long>>, lang: String, heardTr: List<Pair<String, Long>>) {
         if (!enabled || closed) return
         val now = SystemClock.elapsedRealtime()
-        if (showing) fineTune(heardTr)
+        if (showing) { fineTune(heardTr); checkExpected(heard, heardTr) }
 
         val best = heard
             .filter { it.first.split(' ').count { w -> w.length > 1 } >= 4 && it.first.length >= 16 }
             .maxByOrNull { it.first.length } ?: return
-        val every = if (state == State.LOCKED) 12000L else 5000L
+        val every = when (state) { State.LOCKED -> 12000L; State.LOST -> 4000L; else -> 5000L }
         if (now - lastQuoteAt < every) return
         lastQuoteAt = now
         io.execute { try { quote(best.first, best.second, lang) } catch (e: Exception) { Log.w("Tarjuman", "quote", e) } }
@@ -111,6 +119,13 @@ class SubtitleSync(
         val name = top.optString("title") + (if (season > 0) " S${season}E$episode" else "")
 
         synchronized(this) {
+            if (state == State.LOST && id == mediaId) {
+                // film is back after the break: resume at once with the new position
+                offsetMs = off; deltas.clear(); liveMiss = 0; misses = 0
+                lastConfirmAt = now; state = State.LOCKED; lockedAt = now
+                onTakeOver(); startTicker()
+                return
+            }
             if (state != State.SEARCHING && id == mediaId) {
                 // same film: confirm or re-anchor (ad break / pause moves the offset)
                 if (abs(off - offsetMs) < 2500) {
@@ -138,7 +153,40 @@ class SubtitleSync(
         if (state != State.LOCKED) return
         misses++
         // two misses in a row (~25 s): probably ads or another programme -> stop showing file lines
-        if (misses >= 2) { state = State.LOST; overlay?.hideSubtitle() }
+        if (misses >= 2) goLost()
+    }
+
+    private fun goLost() {
+        if (state != State.LOCKED) return
+        state = State.LOST; lostAt = SystemClock.elapsedRealtime(); liveMiss = 0
+        overlay?.hideSubtitle()
+    }
+
+    /**
+     * Fast break detection (~5-8 s): each sentence just heard must match a subtitle line expected
+     * around that moment. Two sentences in a row that do not = ads / pause -> stop showing.
+     */
+    private fun checkExpected(heard: List<Pair<String, Long>>, heardTr: List<Pair<String, Long>>) {
+        val useOriginal = matchCues.isNotEmpty() || needsTranslation
+        val list = if (matchCues.isNotEmpty()) matchCues else cues
+        val src = if (useOriginal) heard else heardTr
+        val need = if (useOriginal) 0.30 else 0.20
+        var any = false; var hit = false
+        for ((text, at) in src) {
+            val w = Srt.words(text)
+            if (w.size < 3) continue
+            any = true
+            val v = at - offsetMs
+            var i = Srt.indexAt(list, v - 9000).coerceAtLeast(0)
+            while (i < list.size && list[i].startMs <= v + 9000) {
+                if (Srt.similarity(w, Srt.words(list[i].text)) >= need) { hit = true; break }
+                i++
+            }
+            if (hit) break
+        }
+        if (!any) return
+        if (hit) { liveMiss = 0; lastConfirmAt = SystemClock.elapsedRealtime(); misses = 0 }
+        else if (++liveMiss >= (if (useOriginal) 2 else 3)) goLost()
     }
 
     private fun addCandidate(id: String, off: Long, now: Long) {
@@ -165,10 +213,13 @@ class SubtitleSync(
             getJsonArray("$base&language=$srcLang")?.let { pickAndDownload(it, preferHuman = true) }?.let { file = it; translate = true }
         }
         val f = file ?: return
+        val match: List<FileCue> = if (!translate && srcLang.length == 2 && srcLang != target.code)
+            getJsonArray("$base&language=$srcLang")?.let { pickAndDownload(it, preferHuman = true) } ?: emptyList()
+        else emptyList()
         synchronized(this) {
             if (closed) return
             mediaId = id; title = name; offsetMs = off
-            cues = f; needsTranslation = translate; translated.clear(); deltas.clear()
+            cues = f; matchCues = match; needsTranslation = translate; translated.clear(); deltas.clear(); liveMiss = 0
             state = State.LOCKED; lastConfirmAt = SystemClock.elapsedRealtime(); misses = 0
         }
         onTakeOver()
