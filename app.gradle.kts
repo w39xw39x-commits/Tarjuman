@@ -55,6 +55,6 @@ android {
 }
 
 dependencies {
-    // on-device text reading (letters / phone messages shown in a scene)
+    // on-device text reading via Google Play services (keeps the APK small)
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
 }

@@ -110,8 +110,10 @@ object Toggle {
 
     fun start(c: Context) {
         if (Prefs.apiKey(c).isBlank()) {
-            Toast.makeText(c, "أدخل مفتاح Groq أولاً من الإعدادات", Toast.LENGTH_LONG).show()
-            c.startActivity(Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            // stay on the channel: just tell the viewer, never jump out of the TV picture
+            val o = OverlayHost.get(c)
+            if (o != null) o.flash("مفتاح الترجمة غير موجود — حدّث التطبيق", 4000)
+            else Toast.makeText(c, "مفتاح الترجمة غير موجود — حدّث التطبيق", Toast.LENGTH_LONG).show()
             return
         }
         c.startActivity(

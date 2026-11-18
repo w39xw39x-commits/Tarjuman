@@ -118,7 +118,7 @@ class MainActivity : Activity() {
         row(col, "kact", "عند الضغط على الزر") { cycle(Prefs.keyAction(this), Config.KEY_ACTIONS.size) { Prefs.setKeyAction(this, it) } }
 
         col.addView(section("الاتصال"))
-        row(col, "apikey", "مفتاح Groq المجاني") { editKey() }
+        row(col, "apikey", "مفتاح Gemini المجاني") { editKey() }
         row(col, "overlay", "العرض فوق التطبيقات (بديل)") { openOverlay() }
         row(col, "version", "الإصدار") {
             Toast.makeText(this, "جارٍ البحث عن تحديث…", Toast.LENGTH_SHORT).show()
@@ -284,7 +284,7 @@ class MainActivity : Activity() {
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
             setText(Prefs.apiKey(this@MainActivity))
-            hint = "gsk_..."
+            hint = "AIza..."
             setTextColor(Color.WHITE)
             backgroundTintList = ColorStateList.valueOf(gold)
             textDirection = View.TEXT_DIRECTION_LTR
@@ -294,7 +294,7 @@ class MainActivity : Activity() {
             addView(input)
         }
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("مفتاح Groq (مجاني من console.groq.com)")
+            .setTitle("مفتاح Gemini (مجاني من aistudio.google.com)")
             .setView(box)
             .setPositiveButton("حفظ") { _, _ -> Prefs.setApiKey(this, input.text.toString()); refresh() }
             .setNegativeButton("إلغاء", null)

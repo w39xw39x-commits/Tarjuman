@@ -25,7 +25,7 @@ class Cue(val text: String, val spokenAt: Long, val spokenDur: Long)
  */
 class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
     private val app = ctx.applicationContext
-    private val groq = GroqClient(Prefs.apiKey(app))
+    private val ai = AiClient(Prefs.apiKey(app))
     private val target: Lang get() = Prefs.target(app)
     private val source = Prefs.source(app)
     private val mode = Prefs.mode(app)
@@ -36,7 +36,6 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
     private val dispatched = HashMap<Int, Long>()
     private var next = 0
     private val history = ArrayDeque<String>()
-    private var lastSource = ""
 
     /** Smoothed processing delay (speech end -> text ready). */
     private var delayMs = 2500.0
@@ -48,7 +47,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
     @Volatile private var closed = false
 
     init {
-        pool.execute { groq.warmUp() }
+        pool.execute { ai.warmUp() }
     }
 
     fun submit(s: Segment) {
@@ -68,32 +67,27 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
         val now = SystemClock.elapsedRealtime()
         if (closed || now < pausedUntil || now - s.endMs > 9000) return emptyList()
 
-        val prompt = synchronized(this) { lastSource }
-        val lang = source.code.takeIf { it != "auto" }
-        val stt = groq.transcribe(Wav.encode(s.pcm), mode.sttModel, lang, prompt)
+        val t = target
+        val hint = source.takeIf { it.code != "auto" }?.english
+        val ctxLines = synchronized(this) { history.toList().takeLast(3) }
+        val stt = ai.listen(Wav.encode(s.pcm), mode.sttModel, t, hint, ctxLines)
         if (stt.segs.isEmpty()) return emptyList()
 
         // Already in the viewer's language (e.g. Arabic film + Arabic target): nothing to do.
-        val t = target
         val spoken = stt.language.lowercase()
-        if (spoken == t.english.lowercase() || spoken == t.code) return emptyList()
+        if (spoken == t.code || spoken == t.english.lowercase()) return emptyList()
 
-        val ctxLines = synchronized(this) {
-            val h = history.toList()
-            lastSource = stt.text.takeLast(220)
-            stt.segs.forEach { history.addLast(it.text) }
+        synchronized(this) {
+            stt.segs.forEach { history.addLast(it.translated) }
             while (history.size > 4) history.removeFirst()
-            h.takeLast(3)
         }
         if (SystemClock.elapsedRealtime() - s.endMs > 10000) return emptyList()
 
-        val tr = groq.translateLines(stt.segs.map { it.text }, ctxLines, t, Config.CHAT_MODEL)
         val cues = ArrayList<Cue>()
-        stt.segs.forEachIndexed { i, seg ->
-            val line = tr.getOrNull(i)?.takeIf { it.isNotBlank() && it != "-" } ?: return@forEachIndexed
-            val start = s.startMs + seg.startMs
+        for (seg in stt.segs) {
+            val start = s.startMs + seg.startMs.coerceAtMost(s.durMs)
             val dur = max(600L, seg.endMs - seg.startMs)
-            cues.add(Cue(line, start, dur))
+            cues.add(Cue(seg.translated, start, dur))
         }
         return mergeDialogue(cues)
     }
@@ -176,7 +170,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
         if (closed || SystemClock.elapsedRealtime() < pausedUntil) return
         pool.execute {
             try {
-                val tr = groq.translateScreen(text, target, Config.CHAT_MODEL)
+                val tr = ai.translateScreen(text, target, Config.CHAT_MODEL)
                 if (tr.isBlank() || tr == "-" || closed) return@execute
                 val shown = "«" + tr + "»"
                 val dur = min(9000L, max(3500L, 1200L + shown.length * 55L))
@@ -193,7 +187,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
                 pausedUntil = now + e.retryAfterSec * 1000L
                 "تم بلوغ حد الاستخدام المجاني مؤقتاً… سيستأنف تلقائياً"
             }
-            e is HttpError && (e.code == 401 || e.code == 403) -> "مفتاح Groq غير صحيح — افتح الإعدادات"
+            e is HttpError && (e.code == 401 || e.code == 403) -> "مفتاح Gemini غير صحيح"
             e is HttpError -> "خطأ من الخادم (${e.code})"
             e is IOException -> "تحقق من اتصال الإنترنت"
             else -> null

@@ -48,9 +48,9 @@ object Config {
     )
 
     val MODES = listOf(
-        Mode("سريع (تأخير أقل)", 800, 3000, 280, "whisper-large-v3-turbo"),
-        Mode("متوازن (موصى به)", 1100, 4500, 340, "whisper-large-v3-turbo"),
-        Mode("دقيق جداً", 1400, 6500, 420, "whisper-large-v3"),
+        Mode("سريع (تأخير أقل)", 800, 3000, 280, "gemini-flash-lite-latest"),
+        Mode("متوازن (موصى به)", 1100, 4500, 340, "gemini-flash-lite-latest"),
+        Mode("دقيق جداً", 1400, 6500, 420, "gemini-flash-latest"),
     )
 
     val FONT_SIZES = listOf(20, 24, 28, 32, 36, 42, 48)
@@ -72,7 +72,7 @@ object Config {
 
     val KEY_ACTIONS = listOf("تشغيل/إيقاف الترجمة", "فتح اللوحة السريعة")
 
-    const val CHAT_MODEL = "llama-3.3-70b-versatile"
+    const val CHAT_MODEL = "gemini-flash-lite-latest"
 }
 
 object Prefs {
