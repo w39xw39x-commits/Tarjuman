@@ -46,6 +46,9 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
     @Volatile private var lastErrorFlash = 0L
     @Volatile private var closed = false
 
+    /** Ready-made subtitles in perfect sync, when the programme is recognised. */
+    private val sync = SubtitleSync(app, overlay, ai)
+
     init {
         pool.execute { ai.warmUp() }
     }
@@ -81,6 +84,15 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
             stt.segs.forEach { history.addLast(it.translated) }
             while (history.size > 4) history.removeFirst()
         }
+
+        // feed the ready-subtitle matcher with what was just heard (device time of each sentence)
+        sync.observe(
+            stt.segs.map { it.text to (s.startMs + it.startMs) },
+            stt.language,
+            stt.segs.map { it.translated to (s.startMs + it.startMs) },
+        )
+        // a subtitle file is following the programme: it is already on time, live lines would only lag
+        if (sync.showing) return emptyList()
         if (SystemClock.elapsedRealtime() - s.endMs > 10000) return emptyList()
 
         val cues = ArrayList<Cue>()
@@ -200,6 +212,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
 
     fun close() {
         closed = true
+        sync.close()
         ui.removeCallbacksAndMessages(null)
         pool.shutdownNow()
         overlay?.hideSubtitle()

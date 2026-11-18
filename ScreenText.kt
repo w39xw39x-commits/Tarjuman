@@ -14,18 +14,17 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 /**
  * Reads text that the camera shows on purpose (a letter, a note, a phone message)
  * and hands it over for translation in the same subtitle spot.
  *
  * Looks at a small copy of the screen about once a second, entirely on the device.
- * A text is translated only when:
- *  - it sits in the picture area (not the channel logo strip at the top,
- *    nor the ticker / burned-in subtitle band at the bottom),
- *  - it is a real sentence (enough letters and words, not a logo or a clock),
- *  - it stays still for 2 looks in a row (the camera is "reading" it),
- *  - it was not translated in the last minute.
+ * Translates place / town / landmark captions and letters or messages shown in the scene.
+ * NEVER the news ticker: wide bottom bands and text cut by the screen edge are skipped,
+ * and a text must stay still in the same place for 2 looks (a ticker keeps moving).
+ * Channel logo corners and clocks are skipped too.
  */
 class ScreenTextWatcher(
     private val projection: MediaProjection,
@@ -41,9 +40,6 @@ class ScreenTextWatcher(
     private var display: VirtualDisplay? = null
     @Volatile private var stopped = false
 
-    private var lastSeen = ""
-    private var stableCount = 0
-    private val recent = ArrayDeque<Pair<Set<String>, Long>>()
 
     fun start() {
         // small capture keeps it light: ~640 px wide is plenty for letters filling the screen
@@ -80,32 +76,50 @@ class ScreenTextWatcher(
             img.close()
         }
         val H = bmp.height.toFloat()
+        val W = bmp.width.toFloat()
         val result = Tasks.await(recognizer.process(InputImage.fromBitmap(bmp, 0)), 3, TimeUnit.SECONDS)
+        val now = SystemClock.elapsedRealtime()
 
-        val parts = ArrayList<String>()
+        val seen = HashSet<String>()
         for (b in result.textBlocks) {
             val box = b.boundingBox ?: continue
-            val top = box.top / H
-            val bottom = box.bottom / H
-            if (top < 0.10f || bottom > 0.78f) continue           // logo strip / ticker & subtitle band
-            val t = b.text.replace('\n', ' ').trim()
-            if (t.count { it.isLetter() } < 6) continue            // logos, clocks, numbers
-            parts.add(t)
+            val top = box.top / H; val bottom = box.bottom / H
+            val left = box.left / W; val right = box.right / W
+            val width = right - left
+            // channel logo / clock corners
+            if (top < 0.15f && (left < 0.25f || right > 0.75f)) continue
+            if (top < 0.06f) continue
+            // NEWS TICKER: a wide band at the bottom, or text cut by the screen edge -> never translated
+            if (bottom > 0.80f && (width > 0.50f || left < 0.02f || right > 0.98f)) continue
+            if (bottom > 0.93f) continue
+            val t = b.text.replace('\n', ' ').replace(Regex("\\s+"), " ").trim()
+            if (t.count { it.isLetter() } < 4) continue                 // numbers, clocks, single letters
+            val key = t.lowercase()
+            seen.add(key)
+            // must stay still in the same place for 2 looks (a ticker moves, a caption stays)
+            val prev = steady[key]
+            val cx = (left + right) / 2; val cy = (top + bottom) / 2
+            if (prev != null && abs(prev.first - cx) < 0.02f && abs(prev.second - cy) < 0.02f) {
+                val n = prev.third + 1
+                steady[key] = Triple(cx, cy, n)
+                if (n == 2) emitIfNew(t, now)
+            } else {
+                steady[key] = Triple(cx, cy, 1)
+            }
         }
-        val text = parts.joinToString("\n").trim()
-        val words = text.split(Regex("\\s+")).filter { w -> w.count { it.isLetter() } >= 2 }
-        if (words.size < 3 || text.count { it.isLetter() } < 14) { lastSeen = ""; stableCount = 0; return }
+        steady.keys.retainAll(seen)
+    }
 
-        val norm = words.joinToString(" ") { it.lowercase() }
-        if (similar(norm, lastSeen)) stableCount++ else { stableCount = 1; lastSeen = norm }
-        if (stableCount != 2) return                             // fire once, on the 2nd steady look
+    /** text -> (center x, center y, consecutive steady looks) */
+    private val steady = HashMap<String, Triple<Float, Float, Int>>()
+    private val done = HashMap<String, Long>()
 
-        val now = SystemClock.elapsedRealtime()
-        val set = norm.split(' ').toSet()
-        while (recent.isNotEmpty() && now - recent.first().second > 60000) recent.removeFirst()
-        if (recent.any { jaccard(it.first, set) > 0.6 }) return
-        recent.addLast(set to now)
-        onText(text.take(600))
+    private fun emitIfNew(text: String, now: Long) {
+        val norm = text.lowercase()
+        done.entries.removeAll { now - it.value > 10 * 60000 }    // same caption again after 10 min is fine
+        if (done.keys.any { similar(it, norm) }) return
+        done[norm] = now
+        onText(text.take(400))
     }
 
     private fun similar(a: String, b: String): Boolean =

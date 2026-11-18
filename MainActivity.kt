@@ -109,7 +109,12 @@ class MainActivity : Activity() {
         row(col, "font", "حجم الخط") { cycle(Prefs.fontIdx(this), Config.FONT_SIZES.size) { Prefs.setFontIdx(this, it) } }
         row(col, "face", "نوع الخط") { cycle(Prefs.faceIdx(this), Config.FACES.size) { Prefs.setFaceIdx(this, it) } }
         row(col, "color", "لون الخط") { cycle(Prefs.colorIdx(this), Config.COLORS.size) { Prefs.setColorIdx(this, it) } }
-        row(col, "stext", "ترجمة الرسائل والأوراق في المشهد") { Prefs.setScreenText(this, !Prefs.screenText(this)) }
+        row(col, "ready", "ترجمة جاهزة للأفلام والمسلسلات") { Prefs.setReadySubs(this, !Prefs.readySubs(this)) }
+        row(col, "adj", "التزامن (+/−)") {
+            Prefs.setSyncAdjustMs(this, 0L)
+            Toast.makeText(this, "غيّر التزامن من اللوحة السريعة بـ ◀▶ — تم التصفير", Toast.LENGTH_SHORT).show()
+        }
+        row(col, "stext", "ترجمة عناوين المشهد والرسائل") { Prefs.setScreenText(this, !Prefs.screenText(this)) }
         row(col, "test", "معاينة شكل الترجمة") { preview() }
 
         col.addView(section("الريموت"))
@@ -213,6 +218,8 @@ class MainActivity : Activity() {
         rows["face"]?.text = Config.FACES[Prefs.faceIdx(this)].label
         rows["color"]?.text = Config.COLORS[Prefs.colorIdx(this)].first
         rows["kact"]?.text = Config.KEY_ACTIONS[Prefs.keyAction(this)]
+        rows["ready"]?.text = if (Prefs.readySubs(this)) "تعمل ✓" else "متوقفة"
+        rows["adj"]?.text = Prefs.syncAdjustMs(this).let { (if (it > 0) "+" else if (it < 0) "−" else "±") + String.format(java.util.Locale.US, "%.2f", kotlin.math.abs(it) / 1000.0) + " ث" }
         rows["stext"]?.text = if (Prefs.screenText(this)) "تعمل ✓" else "متوقفة"
         rows["test"]?.text = "عرض"
         rows["a11y"]?.text = if (RemoteKeyService.isEnabled(this)) "مفعّلة ✓" else "غير مفعّلة — اضغط"

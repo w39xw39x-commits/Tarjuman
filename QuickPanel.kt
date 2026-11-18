@@ -43,6 +43,10 @@ class QuickPanel(private val svc: Context, private val overlay: () -> SubtitleOv
         Item("الترجمة", { if (CaptureService.running) "● تعمل" else "○ متوقفة" }, { _ -> }, ok = {
             hide(); Toggle.toggle(svc)
         }),
+        Item("التزامن", { fmtAdj(Prefs.syncAdjustMs(svc)) }, { d -> Prefs.setSyncAdjustMs(svc, Prefs.syncAdjustMs(svc) + d * 250L) }, ok = {
+            Prefs.setSyncAdjustMs(svc, 0L) // OK = back to 0
+        }),
+        Item("ترجمة جاهزة", { readyLabel() }, { _ -> Prefs.setReadySubs(svc, !Prefs.readySubs(svc)) }),
         Item("نوع الخط", { Config.FACES[Prefs.faceIdx(svc)].label }, { d -> Prefs.setFaceIdx(svc, wrap(Prefs.faceIdx(svc) + d, Config.FACES.size)) }),
         Item("حجم الخط", { "${Prefs.fontSp(svc)}" }, { d -> Prefs.setFontIdx(svc, (Prefs.fontIdx(svc) + d).coerceIn(0, Config.FONT_SIZES.size - 1)) }),
         Item("لون الخط", { Config.COLORS[Prefs.colorIdx(svc)].first }, { d -> Prefs.setColorIdx(svc, wrap(Prefs.colorIdx(svc) + d, Config.COLORS.size)) }),
@@ -53,6 +57,21 @@ class QuickPanel(private val svc: Context, private val overlay: () -> SubtitleOv
             svc.startActivity(Intent(svc, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }),
     )
+
+    private fun fmtAdj(ms: Long): String {
+        val sign = if (ms > 0) "+" else if (ms < 0) "−" else "±"
+        return sign + String.format(java.util.Locale.US, "%.2f", kotlin.math.abs(ms) / 1000.0) + " ث"
+    }
+
+    private fun readyLabel(): String {
+        if (!Prefs.readySubs(svc)) return "متوقفة"
+        val s = SubtitleSync.current ?: return "تعمل"
+        return when (s.state) {
+            SubtitleSync.State.LOCKED -> (s.title ?: "مطابقة").take(18)
+            SubtitleSync.State.LOST -> "إعادة مطابقة…"
+            SubtitleSync.State.SEARCHING -> "تبحث…"
+        }
+    }
 
     private fun wrap(v: Int, n: Int) = ((v % n) + n) % n
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, svc.resources.displayMetrics).toInt()
@@ -139,12 +158,15 @@ class QuickPanel(private val svc: Context, private val overlay: () -> SubtitleOv
         when (e.keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> sel = wrap(sel - 1, items.size)
             KeyEvent.KEYCODE_DPAD_DOWN -> sel = wrap(sel + 1, items.size)
-            // RTL panel: left = next value, right = previous
+            // RTL panel: left = next value / +, right = previous / −
             KeyEvent.KEYCODE_DPAD_LEFT -> { items[sel].change(1); sample() }
             KeyEvent.KEYCODE_DPAD_RIGHT -> { items[sel].change(-1); sample() }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 val ok = items[sel].ok
-                if (ok != null) { ok(); return true } else { items[sel].change(1); sample() }
+                if (ok != null) {
+                    ok()
+                    if (root == null) return true // the action closed the panel
+                } else { items[sel].change(1); sample() }
             }
             KeyEvent.KEYCODE_BACK -> { hide(); return true }
             else -> if (e.keyCode == toggleKey) { hide(); return true } else return false

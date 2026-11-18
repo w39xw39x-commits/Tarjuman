@@ -23,7 +23,7 @@ data class Stt(val segs: List<SttSeg>, val language: String) {
  */
 class AiClient(private val key: String) {
     private val base = "https://generativelanguage.googleapis.com/v1beta/models/"
-    @Volatile private var thinkingOff = true
+    @Volatile private var thinkingOff = false // current Flash-Lite answers fast without it
 
     /** Audio chunk -> timed sentences, already translated into the target language. */
     fun listen(wav: ByteArray, model: String, target: Lang, sourceHint: String?, history: List<String>): Stt {
@@ -65,10 +65,27 @@ class AiClient(private val key: String) {
         return Stt(out, json.optString("lang", ""))
     }
 
+    /** Several subtitle lines at once (for subtitle files in another language), kept 1:1. */
+    fun translateLines(lines: List<String>, target: Lang, model: String): List<String> {
+        val style = if (target.code == "ar")
+            "clear, natural Modern Standard Arabic exactly like professional Arabic TV/cinema subtitles"
+        else "natural, fluent ${target.english} subtitles"
+        val prompt = buildString {
+            append("Translate each numbered subtitle line of a movie/series into $style. ")
+            append("Keep names as they sound, keep dialogue dashes, keep each line short. ")
+            append("Return JSON {\"lines\":[...]} with exactly ${lines.size} strings, string i = translation of line i.\n\n")
+            lines.forEachIndexed { i, l -> append(i + 1).append(". ").append(l.replace('\n', ' ')).append('\n') }
+        }
+        val json = generate(model, JSONArray().put(JSONObject().put("text", prompt)), 0.2)
+        val arr = json.optJSONArray("lines") ?: return emptyList()
+        val out = (0 until arr.length()).map { arr.optString(it).trim() }
+        return if (out.size == lines.size) out else emptyList()
+    }
+
     /** Text the camera shows (letter, note, phone message). */
     fun translateScreen(text: String, target: Lang, model: String): String {
-        val prompt = "This text appears ON SCREEN in a movie or series (a letter, note, sign the camera focuses on, " +
-            "or a phone message received by a character). Translate it into ${target.english}, faithful and concise, " +
+        val prompt = "This text appears ON SCREEN on a TV channel: a caption naming a place, town, landmark or person, " +
+            "a letter, note or sign the camera focuses on, or a phone message received by a character. Never news tickers. Translate it into ${target.english}, faithful and concise, " +
             "keeping message line breaks, max 3 short lines. If it is not meaningful readable text " +
             "(UI garbage, credits, logos, advertising) return an empty translation.\n" +
             "Return JSON: {\"tr\":\"...\"}\n\nText:\n$text"
@@ -89,7 +106,7 @@ class AiClient(private val key: String) {
         val cfg = JSONObject()
             .put("temperature", temperature)
             .put("responseMimeType", "application/json")
-            .put("maxOutputTokens", 1024)
+            .put("maxOutputTokens", 4096)
         if (thinkingOff) cfg.put("thinkingConfig", JSONObject().put("thinkingBudget", 0)) // fastest answers
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))

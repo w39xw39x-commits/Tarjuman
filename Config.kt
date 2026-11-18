@@ -107,8 +107,16 @@ object Prefs {
     fun keyAction(c: Context) = sp(c).getInt("kact", 0).coerceIn(0, Config.KEY_ACTIONS.size - 1)
     fun setKeyAction(c: Context, v: Int) = sp(c).edit().putInt("kact", v).apply()
 
-    fun screenText(c: Context) = sp(c).getBoolean("stext", true)
-    fun setScreenText(c: Context, v: Boolean) = sp(c).edit().putBoolean("stext", v).apply()
+    fun screenText(c: Context) = sp(c).getBoolean("stext2", false) // off by default: no screen capture at all unless chosen
+    fun setScreenText(c: Context, v: Boolean) = sp(c).edit().putBoolean("stext2", v).apply()
+
+    /** Use ready-made subtitle files (perfect sync) when the programme is recognised. */
+    fun readySubs(c: Context) = sp(c).getBoolean("ready", true)
+    fun setReadySubs(c: Context, v: Boolean) = sp(c).edit().putBoolean("ready", v).apply()
+
+    /** Fine sync from the remote (+/-), in ms. Positive = subtitles later. */
+    fun syncAdjustMs(c: Context) = sp(c).getLong("adj", 0L)
+    fun setSyncAdjustMs(c: Context, v: Long) = sp(c).edit().putLong("adj", v.coerceIn(-10000L, 10000L)).apply()
 
     fun toggleKey(c: Context) = sp(c).getInt("tkey", KeyEvent.KEYCODE_PROG_RED)
     fun setToggleKey(c: Context, v: Int) = sp(c).edit().putInt("tkey", v).apply()

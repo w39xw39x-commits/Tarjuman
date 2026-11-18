@@ -1,0 +1,330 @@
+package com.tarjuman.tv
+
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import kotlin.math.abs
+
+/** One line of a subtitle file, in the film's own time (ms from the start of the film/episode). */
+class FileCue(val startMs: Long, val endMs: Long, val text: String)
+
+/**
+ * Ready-made subtitles, perfectly in time (same idea as the receiver's built-in translator):
+ *
+ *  1. IDENTIFY: a line just heard is looked up ("search by quote") -> film / episode + the exact
+ *     moment of that line in the film. Two lines that agree = locked.
+ *  2. DOWNLOAD: the human Arabic subtitle file for that film / episode (or the original-language
+ *     file, translated ahead of time a minute in advance - still zero delay).
+ *  3. FOLLOW: every line is shown at film time + offset, so it appears WITH the speech, not after.
+ *     The offset keeps being re-checked (ad breaks, channel change); +/- on the remote fine-tunes it.
+ *
+ * When nothing is found (live shows, news, documentaries without files) the live translation is used.
+ */
+class SubtitleSync(ctx: Context, private val overlay: SubtitleOverlay?, private val ai: AiClient) {
+    companion object {
+        @Volatile var current: SubtitleSync? = null
+            private set
+    }
+
+    enum class State { SEARCHING, LOCKED, LOST }
+
+    private val app = ctx.applicationContext
+    private val key = BuildConfig.WYZIE_KEY
+    private val io = Executors.newSingleThreadExecutor()
+    private val translator = Executors.newSingleThreadExecutor()
+    private val ui = Handler(Looper.getMainLooper())
+
+    @Volatile var state = State.SEARCHING
+        private set
+    @Volatile var title: String? = null
+        private set
+
+    private var mediaId: String? = null          // imdb[:season:episode]
+    @Volatile private var cues: List<FileCue> = emptyList()
+    @Volatile private var needsTranslation = false
+    private val translated = ConcurrentHashMap<Int, String>()
+    @Volatile private var offsetMs = 0L          // device time = film time + offset
+    @Volatile private var lastConfirmAt = 0L
+    @Volatile private var misses = 0
+    @Volatile private var lastQuoteAt = 0L
+    @Volatile private var closed = false
+    private var shownIdx = -1
+
+    /** (mediaId, offset, when) of recent quote matches, to require agreement before locking. */
+    private val candidates = ArrayList<Triple<String, Long, Long>>()
+    /** heard (translated) lines while locked: used to fine-tune the file's timing. */
+    private val deltas = ArrayList<Long>()
+
+    val enabled: Boolean get() = key.isNotBlank() && Prefs.readySubs(app)
+    val showing: Boolean get() = state == State.LOCKED && cues.isNotEmpty()
+
+    init { current = this }
+
+    // ------------------------------------------------------------------ input from the live pipeline
+
+    /**
+     * @param heard  original-language sentences with the device time they started
+     * @param heardTr the same sentences translated (for fine-tuning against an Arabic file)
+     */
+    fun observe(heard: List<Pair<String, Long>>, lang: String, heardTr: List<Pair<String, Long>>) {
+        if (!enabled || closed) return
+        val now = SystemClock.elapsedRealtime()
+        if (showing) fineTune(heardTr)
+
+        val best = heard
+            .filter { it.first.split(' ').count { w -> w.length > 1 } >= 4 && it.first.length >= 16 }
+            .maxByOrNull { it.first.length } ?: return
+        val every = if (state == State.LOCKED) 12000L else 5000L
+        if (now - lastQuoteAt < every) return
+        lastQuoteAt = now
+        io.execute { try { quote(best.first, best.second, lang) } catch (e: Exception) { Log.w("Tarjuman", "quote", e) } }
+    }
+
+    private fun quote(line: String, spokenAt: Long, lang: String) {
+        val q = line.take(200)
+        val l = if (lang.length == 2) lang else "all"
+        val arr = getJsonArray("https://sub.wyzie.io/quote?q=${enc(q)}&language=$l&limit=3&key=${enc(key)}")
+        val top = arr?.optJSONObject(0)
+        val now = SystemClock.elapsedRealtime()
+        if (top == null) { onMiss(); return }
+
+        val imdb = top.optString("imdbId")
+        val season = top.optInt("season", 0)
+        val episode = top.optInt("episode", 0)
+        val id = if (season > 0 && episode > 0) "$imdb:$season:$episode" else imdb
+        val off = spokenAt - top.optLong("timeMs")
+        val name = top.optString("title") + (if (season > 0) " S${season}E$episode" else "")
+
+        synchronized(this) {
+            if (state != State.SEARCHING && id == mediaId) {
+                // same film: confirm or re-anchor (ad break / pause moves the offset)
+                if (abs(off - offsetMs) < 2500) {
+                    offsetMs = (offsetMs * 0.6 + off * 0.4).toLong()
+                    confirm(now)
+                } else {
+                    addCandidate(id, off, now)
+                    if (agreeing(id, off, now)) { offsetMs = off; deltas.clear(); confirm(now) } else onMiss()
+                }
+                return
+            }
+            addCandidate(id, off, now)
+            if (!agreeing(id, off, now)) { if (state == State.LOCKED) onMiss(); return }
+        }
+        // a new film / episode agreed by two lines: load its subtitles
+        load(id, imdb, season, episode, name, off, lang)
+    }
+
+    private fun confirm(now: Long) {
+        lastConfirmAt = now; misses = 0
+        if (state == State.LOST && cues.isNotEmpty()) { state = State.LOCKED; startTicker() }
+    }
+
+    private fun onMiss() {
+        if (state != State.LOCKED) return
+        misses++
+        // two misses in a row (~25 s): probably ads or another programme -> stop showing file lines
+        if (misses >= 2) { state = State.LOST; overlay?.hideSubtitle() }
+    }
+
+    private fun addCandidate(id: String, off: Long, now: Long) {
+        candidates.add(Triple(id, off, now))
+        candidates.removeAll { now - it.third > 180000 }
+    }
+
+    private fun agreeing(id: String, off: Long, now: Long): Boolean =
+        candidates.count { it.first == id && abs(it.second - off) < 3000 && now - it.third < 180000 } >= 2
+
+    // ------------------------------------------------------------------ download
+
+    private fun load(id: String, imdb: String, season: Int, episode: Int, name: String, off: Long, srcLang: String) {
+        val target = Prefs.target(app)
+        val base = "https://sub.wyzie.io/search?id=${enc(imdb)}" +
+            (if (season > 0) "&season=$season&episode=$episode" else "") +
+            "&format=srt&sort=downloads&key=${enc(key)}"
+        var file: List<FileCue>? = null
+        var translate = false
+        // 1) human subtitles in the viewer's language
+        getJsonArray("$base&language=${target.code}")?.let { pickAndDownload(it, preferHuman = true) }?.let { file = it }
+        // 2) otherwise the original-language file, translated ahead of time
+        if (file == null && srcLang.length == 2 && srcLang != target.code) {
+            getJsonArray("$base&language=$srcLang")?.let { pickAndDownload(it, preferHuman = true) }?.let { file = it; translate = true }
+        }
+        val f = file ?: return
+        synchronized(this) {
+            if (closed) return
+            mediaId = id; title = name; offsetMs = off
+            cues = f; needsTranslation = translate; translated.clear(); deltas.clear()
+            state = State.LOCKED; lastConfirmAt = SystemClock.elapsedRealtime(); misses = 0
+        }
+        overlay?.flash("✓ ترجمة جاهزة: $name", 3500)
+        startTicker()
+    }
+
+    private fun pickAndDownload(arr: JSONArray, preferHuman: Boolean): List<FileCue>? {
+        val list = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+            .filter { it.optString("url").isNotBlank() && !it.optBoolean("isHearingImpaired", false) }
+        val ordered = if (preferHuman) list.sortedBy { if (it.optBoolean("ai", false)) 1 else 0 } else list
+        for (o in ordered.take(3)) {
+            var url = o.optString("url")
+            if (!url.contains("key=")) url += (if (url.contains('?')) "&" else "?") + "key=" + enc(key)
+            val text = getText(url) ?: continue
+            val c = Srt.parse(text)
+            if (c.size >= 20) return c
+        }
+        return null
+    }
+
+    // ------------------------------------------------------------------ fine tuning & display
+
+    /** Matches what the viewer just heard (translated) to nearby file lines; nudges the offset. */
+    private fun fineTune(heardTr: List<Pair<String, Long>>) {
+        if (needsTranslation) return
+        val list = cues
+        for ((tr, at) in heardTr) {
+            val v = at - offsetMs
+            val words = Srt.words(tr)
+            if (words.size < 3) continue
+            var best = -1; var bestScore = 0.0
+            for (i in Srt.indexAt(list, v - 20000).coerceAtLeast(0) until list.size) {
+                val c = list[i]
+                if (c.startMs > v + 20000) break
+                val s = Srt.similarity(words, Srt.words(c.text))
+                if (s > bestScore) { bestScore = s; best = i }
+            }
+            if (best >= 0 && bestScore >= 0.34) {
+                synchronized(this) {
+                    deltas.add(list[best].startMs - v)
+                    if (deltas.size >= 3) {
+                        val sorted = deltas.sorted(); val med = sorted[sorted.size / 2]
+                        if (sorted.count { abs(it - med) < 900 } >= 3 && abs(med) > 250) offsetMs -= med
+                        deltas.clear()
+                        lastConfirmAt = SystemClock.elapsedRealtime(); misses = 0
+                    }
+                }
+            }
+        }
+    }
+
+    private val tick = object : Runnable {
+        override fun run() {
+            if (closed || state != State.LOCKED) { shownIdx = -1; return }
+            val v = SystemClock.elapsedRealtime() - offsetMs - Prefs.syncAdjustMs(app)
+            val list = cues
+            val i = Srt.indexAt(list, v)
+            if (i >= 0 && list[i].startMs <= v && v < list[i].endMs) {
+                if (i != shownIdx) {
+                    val text = if (needsTranslation) translated[i] else list[i].text
+                    if (text != null) {
+                        shownIdx = i
+                        overlay?.show(text, (list[i].endMs - v + 120).coerceIn(500L, 8000L))
+                    }
+                }
+            } else if (shownIdx >= 0 && i != shownIdx) {
+                shownIdx = -1
+            }
+            if (needsTranslation) translateAhead(list, v)
+            ui.postDelayed(this, 80)
+        }
+    }
+
+    private fun startTicker() { ui.removeCallbacks(tick); ui.post(tick) }
+
+    @Volatile private var translating = false
+    private var lastAheadAt = 0L
+
+    /** Original-language file: translate the next ~90 s in advance, in batches (still zero delay). */
+    private fun translateAhead(list: List<FileCue>, v: Long) {
+        val now = SystemClock.elapsedRealtime()
+        if (translating || now - lastAheadAt < 1500) return
+        lastAheadAt = now
+        val from = Srt.indexAt(list, v).coerceAtLeast(0)
+        val todo = (from until list.size).filter { list[it].startMs < v + 90000 && !translated.containsKey(it) }.take(25)
+        if (todo.isEmpty()) return
+        translating = true
+        translator.execute {
+            try {
+                val out = ai.translateLines(todo.map { list[it].text }, Prefs.target(app), Config.CHAT_MODEL)
+                todo.forEachIndexed { k, idx -> out.getOrNull(k)?.takeIf { it.isNotBlank() }?.let { translated[idx] = it } }
+            } catch (e: Exception) { Log.w("Tarjuman", "ahead", e) } finally { translating = false }
+        }
+    }
+
+    fun close() {
+        closed = true
+        ui.removeCallbacksAndMessages(null)
+        io.shutdownNow(); translator.shutdownNow()
+        if (current === this) current = null
+    }
+
+    // ------------------------------------------------------------------ http helpers
+
+    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+
+    private fun getText(url: String): String? = try {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 8000; c.readTimeout = 15000
+        c.setRequestProperty("Accept", "*/*")
+        if (c.responseCode in 200..299) c.inputStream.use { String(it.readBytes(), Charsets.UTF_8) } else null
+    } catch (_: Exception) { null }
+
+    private fun getJsonArray(url: String): JSONArray? {
+        val t = getText(url)?.trim() ?: return null
+        return try {
+            if (t.startsWith("[")) JSONArray(t)
+            else JSONObject(t).let { it.optJSONArray("results") ?: it.optJSONArray("data") ?: JSONArray().put(it) }
+        } catch (_: Exception) { null }
+    }
+}
+
+/** Minimal SRT parser + text helpers. */
+object Srt {
+    private val time = Regex("""(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)""")
+    private val tags = Regex("""<[^>]+>|\{[^}]*\}""")
+
+    fun parse(src: String): List<FileCue> {
+        val out = ArrayList<FileCue>()
+        val blocks = src.replace("﻿", "").replace("\r\n", "\n").replace('\r', '\n').split(Regex("\n\\s*\n"))
+        for (b in blocks) {
+            val lines = b.trim().split('\n')
+            val ti = lines.indexOfFirst { time.containsMatchIn(it) }
+            if (ti < 0) continue
+            val m = time.find(lines[ti]) ?: continue
+            val g = m.groupValues
+            fun ms(h: String, mi: String, s: String, f: String) =
+                h.toLong() * 3600000 + mi.toLong() * 60000 + s.toLong() * 1000 + f.padEnd(3, '0').take(3).toLong()
+            val start = ms(g[1], g[2], g[3], g[4]); val end = ms(g[5], g[6], g[7], g[8])
+            val text = lines.drop(ti + 1).joinToString("\n") { it.replace(tags, "").trim() }.trim()
+            if (text.isNotEmpty() && end > start) out.add(FileCue(start, end, text))
+        }
+        return out.sortedBy { it.startMs }
+    }
+
+    /** Index of the last cue starting at or before t (or -1). */
+    fun indexAt(list: List<FileCue>, t: Long): Int {
+        var lo = 0; var hi = list.size - 1; var ans = -1
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            if (list[mid].startMs <= t) { ans = mid; lo = mid + 1 } else hi = mid - 1
+        }
+        return ans
+    }
+
+    private val diacritics = Regex("[ً-ْـ]")
+    fun words(s: String): Set<String> = s.lowercase()
+        .replace(diacritics, "").replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ة', 'ه').replace('ى', 'ي')
+        .split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length > 1 }.toSet()
+
+    fun similarity(a: Set<String>, b: Set<String>): Double {
+        if (a.isEmpty() || b.isEmpty()) return 0.0
+        return a.intersect(b).size.toDouble() / minOf(a.size, b.size)
+    }
+}
