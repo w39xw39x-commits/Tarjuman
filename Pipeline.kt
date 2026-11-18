@@ -96,7 +96,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
             stt.segs.map { it.translated to (s.startMs + it.startMs) },
         )
         // a subtitle file is following the programme: it is already on time, live lines would only lag
-        if (sync.showing) return emptyList()
+        if (sync.showing || sync.inBreak) return emptyList()
         if (SystemClock.elapsedRealtime() - s.endMs > 10000) return emptyList()
 
         val cues = ArrayList<Cue>()
@@ -177,7 +177,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
             var dur = max(c.spokenDur + 450, minRead)
             if (nextAt != null) dur = min(dur, max(nextAt - at - 60, 700L))
             dur = min(dur, 7000L)
-            ui.postDelayed({ if (!closed && !sync.showing) overlay?.show(c.text, dur) }, max(0L, at - now))
+            ui.postDelayed({ if (!closed && !sync.showing && !sync.inBreak) overlay?.show(c.text, dur) }, max(0L, at - now))
         }
     }
 
@@ -190,7 +190,7 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
                 if (tr.isBlank() || tr == "-" || closed) return@execute
                 val shown = "«" + tr + "»"
                 val dur = min(9000L, max(3500L, 1200L + shown.length * 55L))
-                if (!sync.showing) overlay?.show(shown, dur)
+                if (!sync.showing && !sync.inBreak) overlay?.show(shown, dur)
             } catch (e: Exception) { onError(e) }
         }
     }
