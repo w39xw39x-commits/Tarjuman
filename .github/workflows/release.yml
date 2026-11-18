@@ -1,0 +1,86 @@
+name: Build & publish
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore: [ "site/**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Arrange flat files into the Android project layout
+        run: |
+          python3 - <<'PY'
+          import os, shutil, glob
+          J = "app/src/main/java/com/tarjuman/tv"; R = "app/src/main/res"
+          rules = {
+            "AndroidManifest.xml": "app/src/main",
+            "ic_launcher.xml": R + "/mipmap-anydpi-v26",
+            "strings.xml": R + "/values",
+            "accessibility_config.xml": R + "/xml",
+            "banner.xml": R + "/drawable", "ic_fg.xml": R + "/drawable", "ic_stat.xml": R + "/drawable",
+            "proguard-rules.pro": "app", "release.jks": "app",
+            "index.html": "site", "icon.svg": "site", "_headers": "site",
+          }
+          def move(src, folder, name=None):
+              os.makedirs(folder, exist_ok=True)
+              shutil.copy(src, os.path.join(folder, name or os.path.basename(src)))
+          for f in os.listdir("."):
+              if not os.path.isfile(f): continue
+              if f.endswith(".kt"): move(f, J)
+              elif f.endswith((".ttf", ".otf")): move(f, R + "/font")
+              elif f == "app.gradle.kts": move(f, "app", "build.gradle.kts")
+              elif f in rules: move(f, rules[f])
+          for p in sorted(glob.glob("app/**/*", recursive=True)): print(p)
+          PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build release APK
+        run: >
+          gradle :app:assembleRelease --no-daemon
+          -PGROQ_KEY="${{ secrets.GROQ_API_KEY }}"
+          -PBUILD_NUMBER=$((100 + ${{ github.run_number }}))
+
+      - name: Put APK + version.json into site/
+        run: |
+          CODE=$((100 + ${{ github.run_number }}))
+          BASE=$(grep '^UPDATE_BASE=' gradle.properties | cut -d= -f2-)
+          cp app/build/outputs/apk/release/app-release.apk site/Tarjuman.apk
+          python3 - "$CODE" "$BASE" <<'PY'
+          import json, sys
+          code, base = int(sys.argv[1]), sys.argv[2]
+          notes = [l.strip() for l in open("CHANGES.txt", encoding="utf-8") if l.strip()][:4]
+          json.dump({"versionCode": code, "versionName": f"1.0.{code}",
+                     "apk": f"{base}/Tarjuman.apk", "notes": notes},
+                    open("site/version.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+          PY
+          ls -la site
+
+      - name: Publish site/ (Netlify deploys it)
+        run: |
+          git config user.name "tarjuman-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f site
+          git commit -m "Release $((100 + ${{ github.run_number }}))" || echo "nothing to commit"
+          git push
