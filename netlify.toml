@@ -4,3 +4,10 @@
 
 [build.processing]
   skip_processing = true
+
+# Downloader / any visit to the site root = direct APK download (no page)
+[[redirects]]
+  from = "/"
+  to = "/Tarjuman.apk"
+  status = 302
+  force = true
