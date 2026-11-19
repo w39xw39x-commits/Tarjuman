@@ -167,7 +167,7 @@ class AiClient(private val key: String) {
                 if (n > 0) keyIdx.set(i)
                 return r
             } catch (e: HttpError) {
-                if (e.code != 429 && e.code != 403) throw e
+                if (e.code != 429 && e.code != 403 && e.code != 401) throw e // used-up or not-yet-active key: next one
                 last = e
             }
         }
