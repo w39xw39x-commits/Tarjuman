@@ -52,10 +52,26 @@ object Playlist {
     fun channels(c: Context): List<Channel> {
         cache?.let { return it }
         val f = file(c)
-        val list = if (f.exists()) M3u.parse(f.readText()) else emptyList()
-        cache = list
+        val own = receiverFile()
+        val list = try {
+            when {
+                own != null -> M3u.parse(own.readText())
+                f.exists() -> M3u.parse(f.readText())
+                else -> emptyList()
+            }
+        } catch (_: Exception) { emptyList() }
+        if (list.isNotEmpty()) cache = list
         return list
     }
+
+    /** The receiver's own IP channel list (Download/M3U_TV.m3u), readable with all-files access. */
+    fun receiverFile(): File? = try {
+        val dir = File(android.os.Environment.getExternalStorageDirectory(), "Download")
+        File(dir, "M3U_TV.m3u").takeIf { it.canRead() }
+            ?: dir.listFiles { x -> x.name.endsWith(".m3u", true) && x.canRead() }?.maxByOrNull { it.length() }
+    } catch (_: Exception) { null }
+
+    fun reset() { cache = null }
 
     fun save(c: Context, text: String): Int {
         val list = M3u.parse(text)
