@@ -44,6 +44,7 @@ class StreamTee(private val url: String) {
                     c.connectTimeout = 10000; c.readTimeout = 20000
                     c.instanceFollowRedirects = true
                     c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Tarjuman/1.0")
+                    android.util.Log.i("TJPLAY", "tee connect code=${c.responseCode} type=${c.contentType} url=${c.url}")
                     c.inputStream.use { inp ->
                         val buf = ByteArray(64 * 1024)
                         backoff = 800L
@@ -59,7 +60,8 @@ class StreamTee(private val url: String) {
                             }
                         }
                     }
-                } catch (_: Exception) { }
+                } catch (e: Exception) { android.util.Log.w("TJPLAY", "tee error ${e.javaClass.simpleName}: ${e.message}") }
+                android.util.Log.i("TJPLAY", "tee disconnected total=$total")
                 if (closed) break
                 try { Thread.sleep(backoff) } catch (_: InterruptedException) { break }
                 backoff = (backoff * 2).coerceAtMost(8000)
