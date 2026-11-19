@@ -21,7 +21,7 @@ import android.widget.TextView
  * Controlled only with the remote:  ▲▼ choose row · ◀▶ change value ·
  * OK on a row = action · Back / the subtitle key = hide. Auto-hides after 10 s.
  */
-class QuickPanel(private val svc: Context, private val overlay: () -> SubtitleOverlay?) {
+class QuickPanel(private val svc: Context, private val overlay: () -> SubSink?) {
     private val wm = svc.getSystemService(WindowManager::class.java)
     private val main = Handler(Looper.getMainLooper())
     private var root: LinearLayout? = null

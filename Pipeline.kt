@@ -23,12 +23,22 @@ class Cue(val text: String, val spokenAt: Long, val spokenDur: Long)
  *  - chunks are processed in parallel but cues always appear in spoken order;
  *  - anything that would appear too late to match the picture is dropped.
  */
-class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
+class Pipeline(
+    ctx: Context,
+    private val overlay: SubSink?,
+    /**
+     * Built-in player mode: finished lines are handed over with the time they were spoken and the
+     * player shows them exactly when the (delayed) picture reaches that moment. Null = overlay mode.
+     */
+    private val cueSink: ((Cue) -> Unit)? = null,
+    /** Built-in player mode can afford the most accurate model: the picture waits for the text. */
+    private val modeOverride: Mode? = null,
+) {
     private val app = ctx.applicationContext
     private val ai = AiClient(Prefs.apiKey(app))
     private val target: Lang get() = Prefs.target(app)
     private val source = Prefs.source(app)
-    private val mode = Prefs.mode(app)
+    private val mode = modeOverride ?: Prefs.mode(app)
     private val pool = Executors.newFixedThreadPool(3)
     private val ui = Handler(Looper.getMainLooper())
 
@@ -87,6 +97,14 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
         synchronized(this) {
             stt.segs.forEach { history.addLast(it.translated) }
             while (history.size > 4) history.removeFirst()
+        }
+
+        if (cueSink != null) {
+            // player mode: no guessing, the player knows exactly when each sentence will be heard
+            val out = ArrayList<Cue>()
+            for (seg in stt.segs) out.add(Cue(seg.translated, s.startMs + seg.startMs.coerceAtMost(s.durMs), max(600L, seg.endMs - seg.startMs)))
+            mergeDialogue(out).forEach { cueSink.invoke(it) }
+            return emptyList()
         }
 
         // feed the ready-subtitle matcher with what was just heard (device time of each sentence)
@@ -198,19 +216,19 @@ class Pipeline(ctx: Context, private val overlay: SubtitleOverlay?) {
     private fun onError(e: Exception) {
         Log.w("Tarjuman", "request failed", e)
         val now = SystemClock.elapsedRealtime()
+        // busy / limit: slow down silently, never bother the viewer with it
+        if (e is HttpError && (e.code == 429 || e.code >= 500)) {
+            pausedUntil = now + e.retryAfterSec * 1000L
+            return
+        }
         val msg = when {
-            e is HttpError && e.code == 429 -> {
-                pausedUntil = now + e.retryAfterSec * 1000L
-                "تم بلوغ حد الاستخدام المجاني مؤقتاً… سيستأنف تلقائياً"
-            }
             e is HttpError && (e.code == 401 || e.code == 403) -> "تعذّر تشغيل الترجمة — حدّث التطبيق"
-            e is HttpError -> "خطأ من الخادم (${e.code})"
-            e is IOException -> "تحقق من اتصال الإنترنت"
+            e is IOException && e !is HttpError -> "تحقق من اتصال الإنترنت"
             else -> null
         } ?: return
-        if (now - lastErrorFlash > 20000) {
+        if (now - lastErrorFlash > 120000) {
             lastErrorFlash = now
-            overlay?.flash(msg, 3500)
+            overlay?.flash(msg, 3000)
         }
     }
 

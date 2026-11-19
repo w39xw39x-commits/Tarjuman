@@ -22,6 +22,7 @@ data class Stt(val segs: List<SttSeg>, val language: String) {
  * translated, timed sentences in ONE request, so the delay is lower than STT + translation.
  */
 class AiClient(private val key: String) {
+    companion object { const val FALLBACK = "gemini-flash-lite-latest" }
     private val base = "https://generativelanguage.googleapis.com/v1beta/models/"
     @Volatile private var thinkingOff = false // current Flash-Lite answers fast without it
 
@@ -114,11 +115,16 @@ class AiClient(private val key: String) {
         val text = try {
             post(model, body)
         } catch (e: HttpError) {
-            if (e.code == 400 && thinkingOff) { // model without thinking control: retry plainly
-                thinkingOff = false
-                cfg.remove("thinkingConfig")
-                post(model, body)
-            } else throw e
+            when {
+                e.code == 400 && thinkingOff -> { // model without thinking control: retry plainly
+                    thinkingOff = false
+                    cfg.remove("thinkingConfig")
+                    post(model, body)
+                }
+                // strong model busy or missing: the fast model answers instead
+                (e.code == 503 || e.code == 404 || e.code == 429) && model != FALLBACK -> post(FALLBACK, body)
+                else -> throw e
+            }
         }
         val res = JSONObject(text)
         val cand = res.optJSONArray("candidates")?.optJSONObject(0) ?: return JSONObject()

@@ -105,6 +105,8 @@ class RemoteKeyService : AccessibilityService() {
 
 object Toggle {
     fun toggle(c: Context) {
+        // inside Tarjuman's own player the subtitles are already there: just show / hide them
+        PlayerActivity.active?.let { it.toggleSubs(); return }
         if (CaptureService.running) CaptureService.stop(c) else start(c)
     }
 

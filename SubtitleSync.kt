@@ -31,7 +31,7 @@ class FileCue(val startMs: Long, val endMs: Long, val text: String)
  */
 class SubtitleSync(
     ctx: Context,
-    private val overlay: SubtitleOverlay?,
+    private val overlay: SubSink?,
     private val ai: AiClient,
     /** called when a subtitle file takes over the screen (live lines must stop) */
     private val onTakeOver: () -> Unit,

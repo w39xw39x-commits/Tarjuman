@@ -48,8 +48,16 @@ object Fonts {
     }
 }
 
+/** Anything that can show a subtitle line: the overlay above other apps, or the built-in player. */
+interface SubSink {
+    fun show(text: String, durationMs: Long)
+    fun flash(text: String, durationMs: Long = 2200)
+    fun hideSubtitle()
+    fun restyle()
+}
+
 /** Draws the subtitle (bottom) and short status messages (top corner) above any app. */
-class SubtitleOverlay(private val ctx: Context, private val type: Int) {
+class SubtitleOverlay(private val ctx: Context, private val type: Int) : SubSink {
     private val wm = ctx.getSystemService(WindowManager::class.java)
     private val main = Handler(Looper.getMainLooper())
     private var sub: OutlineTextView? = null
@@ -97,17 +105,9 @@ class SubtitleOverlay(private val ctx: Context, private val type: Int) {
         return tv
     }
 
-    private fun applyStyle(v: OutlineTextView) {
-        v.typeface = Fonts.get(ctx, Prefs.faceIdx(ctx))
-        val sizeSp = Prefs.fontSp(ctx).toFloat()
-        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        v.setTextColor(Config.COLORS[Prefs.colorIdx(ctx)].second)
-        v.strokePx = dp(sizeSp * 0.11f).coerceAtLeast(dp(2.5f))
-        v.setShadowLayer(dp(4f), 0f, dp(1.5f), 0xAA000000.toInt())
-        v.invalidate()
-    }
+    private fun applyStyle(v: OutlineTextView) = SubStyle.apply(ctx, v)
 
-    fun show(text: String, durationMs: Long) = main.post {
+    override fun show(text: String, durationMs: Long) { main.post {
         try {
             val v = sub ?: make(true).also { sub = it }
             applyStyle(v)
@@ -116,12 +116,12 @@ class SubtitleOverlay(private val ctx: Context, private val type: Int) {
             main.removeCallbacks(hideSub)
             main.postDelayed(hideSub, durationMs)
         } catch (_: Exception) { }
-    }
+    } }
 
     /** Re-style the visible line right away (used by the quick panel). */
-    fun restyle() = main.post { sub?.let { applyStyle(it) } }
+    override fun restyle() { main.post { sub?.let { applyStyle(it) } } }
 
-    fun flash(text: String, durationMs: Long = 2200) = main.post {
+    override fun flash(text: String, durationMs: Long) { main.post {
         try {
             val v = status ?: make(false).also { status = it }
             v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
@@ -130,14 +130,28 @@ class SubtitleOverlay(private val ctx: Context, private val type: Int) {
             main.removeCallbacks(hideStatus)
             main.postDelayed(hideStatus, durationMs)
         } catch (_: Exception) { }
-    }
+    } }
 
-    fun hideSubtitle() = main.post { main.removeCallbacks(hideSub); sub?.visibility = View.INVISIBLE }
+    override fun hideSubtitle() { main.post { main.removeCallbacks(hideSub); sub?.visibility = View.INVISIBLE } }
 
     fun detach() = main.post {
         main.removeCallbacksAndMessages(null)
         listOfNotNull(sub, status).forEach { try { wm.removeView(it) } catch (_: Exception) { } }
         sub = null; status = null
+    }
+}
+
+/** One place for the subtitle look (font, size, colour, outline). */
+object SubStyle {
+    fun apply(ctx: Context, v: OutlineTextView) {
+        val d = ctx.resources.displayMetrics.density
+        v.typeface = Fonts.get(ctx, Prefs.faceIdx(ctx))
+        val sizeSp = Prefs.fontSp(ctx).toFloat()
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+        v.setTextColor(Config.COLORS[Prefs.colorIdx(ctx)].second)
+        v.strokePx = maxOf(sizeSp * 0.11f * d, 2.5f * d)
+        v.setShadowLayer(4f * d, 0f, 1.5f * d, 0xAA000000.toInt())
+        v.invalidate()
     }
 }
 
