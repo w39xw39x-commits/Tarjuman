@@ -409,7 +409,10 @@ class MainActivity : Activity() {
 
     private fun openFull() {
         val src = sources.getOrNull(srcIdx) ?: return
-        if (src.key == iptvKey) PlayerActivity.open(this, chanIdx) else TvActivity.open(this, src, chanIdx)
+        // the IPTV account allows ONE connection: free it before the full player connects
+        stopPreview()
+        val idx = chanIdx
+        ui.postDelayed({ if (src.key == iptvKey) PlayerActivity.open(this, idx) else TvActivity.open(this, src, idx) }, 350)
     }
 
     private fun nextSource() {
