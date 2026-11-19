@@ -227,6 +227,8 @@ class SubtitleSync(
         onTakeOver()
         lockedAt = SystemClock.elapsedRealtime()
         overlay?.flash("✓ ترجمة جاهزة: $name", 3500)
+        val pid = id; val pname = name
+        Thread { Poster.show(overlay, pid, pname) }.start()
         startTicker()
     }
 
