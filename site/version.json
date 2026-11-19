@@ -1,10 +1,10 @@
 {
- "versionCode": 127,
- "versionName": "1.0.127",
+ "versionCode": 130,
+ "versionName": "1.0.130",
  "apk": "https://raw.githubusercontent.com/w39xw39x-commits/Tarjuman/main/site/Tarjuman.apk",
  "notes": [
-  "واجهة جديدة",
-  "شاشة القنوات",
-  "ترجمة أدق"
+  "ضغطتين على الزر الأخضر للترجمة",
+  "تجاهل الإعلانات",
+  "تزامن أدق"
  ]
 }
