@@ -25,7 +25,8 @@ object ShellCapture {
     private const val PKG = "com.android.shell"
     private val SOURCES = intArrayOf(1998 /*FM_TUNER*/, 1997 /*ECHO_REFERENCE*/, 8 /*REMOTE_SUBMIX*/, 0 /*DEFAULT*/, 1 /*MIC*/, 9 /*UNPROCESSED*/)
 
-    class FakeContext : ContextWrapper(null) {
+    class FakeContext : ContextWrapper(sysContext) {
+        override fun getDeviceId(): Int = 0
         override fun getPackageName(): String = PKG
         override fun getOpPackageName(): String = PKG
         @SuppressLint("NewApi")
