@@ -58,7 +58,7 @@ class AiClient(private val key: String) {
         for (i in 0 until lines.length()) {
             val o = lines.optJSONObject(i) ?: continue
             val src = Filters.clean(o.optString("src")) ?: continue
-            val tr = o.optString("tr").trim().trim('"', '«', '»', '“', '”').trim()
+            val tr = o.optString("tr").replace(Regex("""\\?b?egin\{[^}]*}|\\?end\{[^}]*}|\{[a-z]+}"""), "").trim().trim('"', '«', '»', '“', '”').trim()
             if (tr.isEmpty()) continue
             val s = (o.optDouble("start", 0.0) * 1000).toLong().coerceAtLeast(0)
             val e = (o.optDouble("end", 0.0) * 1000).toLong().coerceAtLeast(s + 300)
