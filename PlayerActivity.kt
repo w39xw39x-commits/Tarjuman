@@ -71,6 +71,8 @@ class PlayerActivity : Activity() {
 
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var playerView: PlayerView
+    private lateinit var texture: android.view.TextureView
+    private var watcher: ScreenTextWatcher? = null
     private lateinit var subView: OutlineTextView
     private lateinit var banner: TextView
     private lateinit var status: TextView
@@ -111,7 +113,9 @@ class PlayerActivity : Activity() {
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             setShutterBackgroundColor(Color.BLACK)
         }
-        root.addView(playerView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        // TextureView: lets us read the shown frame for place names / captions in the scene
+        texture = android.view.TextureView(this)
+        root.addView(texture, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
 
         subView = OutlineTextView(this).apply {
             gravity = Gravity.CENTER
@@ -152,12 +156,23 @@ class PlayerActivity : Activity() {
         if (channels.isEmpty()) { status.text = "لا توجد قنوات — أضف قائمة القنوات من الإعدادات"; return }
         play(index)
         ui.post(tick)
+        if (Prefs.screenText(this)) {
+            val m = resources.displayMetrics
+            watcher = try {
+                ScreenTextWatcher(null, m.widthPixels, m.heightPixels, m.densityDpi, frames = {
+                    val l = java.util.concurrent.CountDownLatch(1); var b: android.graphics.Bitmap? = null
+                    ui.post { b = try { if (texture.isAvailable) texture.getBitmap(640, 360) else null } catch (_: Exception) { null }; l.countDown() }
+                    l.await(600, java.util.concurrent.TimeUnit.MILLISECONDS); b
+                }) { t -> pipeline?.onScreenText(t) }.also { it.start() }
+            } catch (_: Throwable) { null }
+        }
     }
 
     override fun onStop() {
         super.onStop()
         active = null
         ui.removeCallbacksAndMessages(null)
+        watcher?.stop(); watcher = null
         release()
         getSharedPreferences("tarjuman", MODE_PRIVATE).edit().putLong("player_delay", delayMs).apply()
     }
@@ -187,7 +202,7 @@ class PlayerActivity : Activity() {
             .build()
         a.volume = 0f
         val s = ExoPlayer.Builder(this).build()
-        playerView.player = s
+        s.setVideoTextureView(texture)
         ahead = a; screen = s
 
         if (hls) {
