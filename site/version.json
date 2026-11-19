@@ -1,10 +1,11 @@
 {
- "versionCode": 162,
- "versionName": "1.0.162",
+ "versionCode": 166,
+ "versionName": "1.0.166",
  "apk": "https://raw.githubusercontent.com/w39xw39x-commits/Tarjuman/main/site/Tarjuman.apk",
  "notes": [
   "قنوات IP داخل التطبيق",
   "تزامن دقيق",
-  "ترجمة أسماء الأماكن"
+  "ترجمة أسماء الأماكن",
+  "تحسينات"
  ]
 }
