@@ -79,7 +79,7 @@ object Prefs {
     private fun sp(c: Context) = c.getSharedPreferences("tarjuman", Context.MODE_PRIVATE)
 
     fun apiKey(c: Context): String =
-        sp(c).getString("key", null)?.trim()?.takeIf { it.isNotEmpty() } ?: BuildConfig.DEFAULT_KEY
+        listOfNotNull(sp(c).getString("key", null)?.trim()?.takeIf { it.isNotEmpty() }, BuildConfig.DEFAULT_KEY).joinToString(",")
 
     fun setApiKey(c: Context, v: String) = sp(c).edit().putString("key", v.trim()).apply()
 
