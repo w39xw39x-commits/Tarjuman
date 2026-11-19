@@ -79,7 +79,11 @@ object Prefs {
     private fun sp(c: Context) = c.getSharedPreferences("tarjuman", Context.MODE_PRIVATE)
 
     fun apiKey(c: Context): String =
-        listOfNotNull(sp(c).getString("key", null)?.trim()?.takeIf { it.isNotEmpty() }, BuildConfig.DEFAULT_KEY).joinToString(",")
+        listOfNotNull(sp(c).getString("key", null)?.trim()?.takeIf { it.isNotEmpty() }, unscramble(BuildConfig.DEFAULT_KEY)).joinToString(",")
+
+    private fun unscramble(s: String): String = try {
+        String(android.util.Base64.decode(s, android.util.Base64.DEFAULT)).reversed()
+    } catch (_: Exception) { s }
 
     fun setApiKey(c: Context, v: String) = sp(c).edit().putString("key", v.trim()).apply()
 
