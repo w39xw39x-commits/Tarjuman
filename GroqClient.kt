@@ -13,7 +13,7 @@ class HttpError(val code: Int, val retryAfterSec: Int, msg: String) : IOExceptio
 
 /** One spoken sentence inside a chunk: original text, its translation and timing (ms from chunk start). */
 data class SttSeg(val text: String, val translated: String, val startMs: Long, val endMs: Long)
-data class Stt(val segs: List<SttSeg>, val language: String) {
+data class Stt(val segs: List<SttSeg>, val language: String, val ad: Boolean = false) {
     val text: String get() = segs.joinToString(" ") { it.text }
 }
 
@@ -39,12 +39,13 @@ class AiClient(private val key: String) {
             append("2) Split it into short subtitle sentences with start and end time in seconds from the clip start.\n")
             append("3) Translate each sentence into $style. Keep names as they sound. Max ~42 characters per row, at most 2 rows.\n")
             append("4) If consecutive sentences are spoken by DIFFERENT people (question/answer, reply), start each of those translations with \"- \".\n")
+            append("5) Set \"ad\":true if this clip is NOT the programme itself: a commercial/advert, channel promo, trailer, sponsor or announcer message (product or brand names, prices, offers, phone numbers, websites, 'coming up', jingles).\n")
             append("If there is no speech, return an empty list. Never invent words.\n")
             if (history.isNotEmpty()) {
                 append("Previous subtitle lines for context only (do not repeat them):\n")
                 history.forEach { append("- ").append(it).append('\n') }
             }
-            append("Return JSON: {\"lang\":\"<ISO 639-1 of the speech>\",\"lines\":[{\"start\":0.0,\"end\":1.5,\"src\":\"original\",\"tr\":\"translation\"}]}")
+            append("Return JSON: {\"lang\":\"<ISO 639-1 of the speech>\",\"ad\":false,\"lines\":[{\"start\":0.0,\"end\":1.5,\"src\":\"original\",\"tr\":\"translation\"}]}")
         }
         val parts = JSONArray()
             .put(JSONObject().put("inline_data", JSONObject()
@@ -63,7 +64,7 @@ class AiClient(private val key: String) {
             val e = (o.optDouble("end", 0.0) * 1000).toLong().coerceAtLeast(s + 300)
             out.add(SttSeg(src, tr, s, e))
         }
-        return Stt(out, json.optString("lang", ""))
+        return Stt(out, json.optString("lang", ""), json.optBoolean("ad", false))
     }
 
     /** Several subtitle lines at once (for subtitle files in another language), kept 1:1. */
