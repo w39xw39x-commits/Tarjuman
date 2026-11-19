@@ -82,15 +82,32 @@ class RemoteKeyService : AccessibilityService() {
             h.postDelayed(longPress, 1500)
         } else {
             h.removeCallbacks(longPress)
+            val now = android.os.SystemClock.uptimeMillis()
             if (!longFired) {
-                if (Prefs.keyAction(this) == 1) panel?.show() else Toggle.toggle(this)
+                if (now - firstTapAt < 550) {
+                    // double press = the action (single press is left to the receiver)
+                    firstTapAt = 0L
+                    if (Prefs.keyAction(this) == 1) panel?.show() else Toggle.toggle(this)
+                    // the receiver may have opened its own menu on the first press: close it
+                    if (foreignWindowAt > tapStartAt) h.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 120)
+                } else {
+                    firstTapAt = now; tapStartAt = now - 400
+                }
             }
             longFired = false
         }
         return true
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    private var firstTapAt = 0L
+    private var tapStartAt = 0L
+    @Volatile private var foreignWindowAt = 0L
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val pkg = event?.packageName?.toString() ?: return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != packageName)
+            foreignWindowAt = android.os.SystemClock.uptimeMillis()
+    }
     override fun onInterrupt() {}
 
     override fun onDestroy() {
