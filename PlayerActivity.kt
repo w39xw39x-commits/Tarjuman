@@ -208,7 +208,7 @@ class PlayerActivity : Activity() {
                 }
             })
         } else {
-            val t = StreamTee(ch.url).also { it.delayMs = delayMs; it.start() }
+            val t = TeeHub.get(ch.url).also { it.delayMs = delayMs }
             tee = t
             a.setMediaSource(ProgressiveMediaSource.Factory(TeeDataSource.Factory(t) { 0L }).createMediaSource(MediaItem.fromUri(ch.url)))
             s.setMediaSource(ProgressiveMediaSource.Factory(TeeDataSource.Factory(t) { delayMs }).createMediaSource(MediaItem.fromUri(ch.url)))
@@ -238,7 +238,7 @@ class PlayerActivity : Activity() {
         try { ahead?.release() } catch (_: Exception) { }
         try { screen?.release() } catch (_: Exception) { }
         ahead = null; screen = null
-        tee?.close(); tee = null
+        if (tee != null) TeeHub.idle(); tee = null
     }
 
     /** Film time of a player: stream clock when known, otherwise its position. */
