@@ -644,7 +644,7 @@ class MainActivity : Activity() {
             }
             if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 && sources.getOrNull(srcIdx)?.key == iptvKey) {
                 digits.append(k - KeyEvent.KEYCODE_0)
-                Toast.makeText(this, "القناة $digits", Toast.LENGTH_SHORT).show()
+                infoBar.text = "●  $digits"   // instant, no slow toast
                 ui.removeCallbacks(jump)
                 if (digits.length >= Playlist.channels(this).size.toString().length) jump.run() else ui.postDelayed(jump, 650)
                 return true
