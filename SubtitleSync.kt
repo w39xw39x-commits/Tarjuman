@@ -109,7 +109,7 @@ class SubtitleSync(
         val arr = getJsonArray("https://sub.wyzie.io/quote?q=${enc(q)}&language=$l&limit=3&key=${enc(key)}")
         val top = arr?.optJSONObject(0)
         val now = SystemClock.elapsedRealtime()
-        if (top == null) { onMiss(); return }
+        if (top == null) { Log.i("TJSYNC", "quote miss: ${q.take(50)}"); onMiss(); return }
 
         val imdb = top.optString("imdbId")
         val season = top.optInt("season", 0)
@@ -117,6 +117,7 @@ class SubtitleSync(
         val id = if (season > 0 && episode > 0) "$imdb:$season:$episode" else imdb
         val off = spokenAt - top.optLong("timeMs")
         val name = top.optString("title") + (if (season > 0) " S${season}E$episode" else "")
+        Log.i("TJSYNC", "quote hit $name id=$id off=$off state=$state")
 
         synchronized(this) {
             if (state == State.LOST && id == mediaId) {
@@ -222,6 +223,7 @@ class SubtitleSync(
             cues = f; matchCues = match; needsTranslation = translate; translated.clear(); deltas.clear(); liveMiss = 0
             state = State.LOCKED; lastConfirmAt = SystemClock.elapsedRealtime(); misses = 0
         }
+        Log.i("TJSYNC", "LOCKED $name off=$off cues=${f.size}")
         onTakeOver()
         lockedAt = SystemClock.elapsedRealtime()
         overlay?.flash("✓ ترجمة جاهزة: $name", 3500)
