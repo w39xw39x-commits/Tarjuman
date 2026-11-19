@@ -214,6 +214,10 @@ class PlayerActivity : Activity() {
             s.setMediaSource(ProgressiveMediaSource.Factory(TeeDataSource.Factory(t) { delayMs }).createMediaSource(MediaItem.fromUri(ch.url)))
             s.prepare(); s.playWhenReady = true
         }
+        a.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) { android.util.Log.i("TJPLAY", "ahead state=$state") }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) { android.util.Log.w("TJPLAY", "ahead error ${error.errorCodeName}: ${error.cause}") }
+        })
         a.prepare(); a.playWhenReady = true
 
         s.addListener(object : Player.Listener {
@@ -221,6 +225,7 @@ class PlayerActivity : Activity() {
                 if (state == Player.STATE_READY) status.visibility = View.GONE
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                android.util.Log.w("TJPLAY", "screen error ${error.errorCodeName}: ${error.cause}")
                 status.visibility = View.VISIBLE
                 status.text = "تعذّر تشغيل القناة — جرّب قناة أخرى"
             }
