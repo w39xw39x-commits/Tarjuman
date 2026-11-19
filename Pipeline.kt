@@ -46,6 +46,7 @@ class Pipeline(
     private val dispatched = HashMap<Int, Long>()
     private var next = 0
     private val history = ArrayDeque<String>()
+    private val langs = ArrayDeque<String>()
 
     /** Smoothed processing delay (speech end -> text ready). */
     private var delayMs = 2500.0
@@ -92,6 +93,17 @@ class Pipeline(
 
         // Already in the viewer's language (e.g. Arabic film + Arabic target): nothing to do.
         val spoken = stt.language.lowercase()
+        // adverts / promos are never translated: flagged by the listener, or a sudden switch
+        // away from the programme's own language (e.g. local-language ads on a foreign channel)
+        val dominant = synchronized(this) {
+            val d = langs.groupingBy { it }.eachCount().maxByOrNull { it.value }
+            if (spoken.isNotEmpty() && !stt.ad) { langs.addLast(spoken); while (langs.size > 8) langs.removeFirst() }
+            d?.takeIf { it.value >= 4 }?.key
+        }
+        if (stt.ad || (dominant != null && spoken.isNotEmpty() && spoken != dominant)) {
+            Log.i("TJSYNC", "skip ad=${stt.ad} lang=$spoken main=$dominant")
+            return emptyList()
+        }
         if (spoken == t.code || spoken == t.english.lowercase()) return emptyList()
 
         synchronized(this) {
