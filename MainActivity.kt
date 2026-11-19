@@ -336,9 +336,13 @@ class MainActivity : Activity() {
 
         if (src.key == iptvKey) {
             val chans = Playlist.channels(this)
-            chans.forEachIndexed { i, ch -> strip.addView(chanTile("${i + 1}", ch.name, i) { previewIptv(i) }) }
             chanIdx = chanIdx.coerceIn(0, maxOf(0, chans.size - 1))
+            // only a window of tiles around the current channel: thousands of views would be slow
+            val from = maxOf(0, chanIdx - 20); val to = minOf(chans.size, from + 60)
+            for (i in from until to) strip.addView(chanTile("${i + 1}", chans[i].name, i) { previewIptv(i) })
             previewIptv(chanIdx)
+            val at = chanIdx - from
+            strip.post { strip.getChildAt(at)?.let { c -> (strip.parent as? android.widget.HorizontalScrollView)?.scrollTo(maxOf(0, c.left - dpi(40f)), 0) } }
         } else {
             src.channels.forEachIndexed { i, ch -> strip.addView(chanTile(ch.number, ch.name, i) { previewTv(src, i) }) }
             chanIdx = chanIdx.coerceIn(0, maxOf(0, src.channels.size - 1))
@@ -632,7 +636,9 @@ class MainActivity : Activity() {
             if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 && sources.getOrNull(srcIdx)?.key == iptvKey) {
                 digits.append(k - KeyEvent.KEYCODE_0)
                 Toast.makeText(this, "القناة $digits", Toast.LENGTH_SHORT).show()
-                ui.removeCallbacks(jump); ui.postDelayed(jump, 1400); return true
+                ui.removeCallbacks(jump)
+                if (digits.length >= Playlist.channels(this).size.toString().length) jump.run() else ui.postDelayed(jump, 650)
+                return true
             }
             if (adjusting != null) {
                 if (k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER) {
