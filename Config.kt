@@ -111,8 +111,8 @@ object Prefs {
     fun setScreenText(c: Context, v: Boolean) = sp(c).edit().putBoolean("stext2", v).apply()
 
     /** Use ready-made subtitle files (perfect sync) when the programme is recognised. */
-    fun readySubs(c: Context) = sp(c).getBoolean("ready", true)
-    fun setReadySubs(c: Context, v: Boolean) = sp(c).edit().putBoolean("ready", v).apply()
+    fun readySubs(c: Context) = sp(c).getBoolean("ready2", true)
+    fun setReadySubs(c: Context, v: Boolean) = sp(c).edit().putBoolean("ready2", v).apply()
 
     /** Fine sync from the remote (+/-), in ms. Positive = subtitles later. */
     fun syncAdjustMs(c: Context) = sp(c).getLong("adj", 0L)
