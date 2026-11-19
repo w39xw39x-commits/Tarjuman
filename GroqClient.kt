@@ -25,7 +25,7 @@ class AiClient(private val key: String) {
     companion object {
         const val FALLBACK = "gemini-flash-lite-latest"
         /** every model has its own free quota: when one is used up, the next answers */
-        private val CHAIN = listOf("gemini-flash-lite-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-flash")
+        private val CHAIN = listOf("gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-flash-latest", "gemini-3.8-flash", "gemini-3.5-flash")
         private val coolUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
         private val keyIdx = java.util.concurrent.atomic.AtomicInteger(0)
         private val LATEX = Regex("""\\?b?egin\{[^}]*\}|\\?end\{[^}]*\}|\{[a-z]+\}""")
@@ -179,7 +179,7 @@ class AiClient(private val key: String) {
         c.requestMethod = "POST"
         c.doOutput = true
         c.connectTimeout = 8000
-        c.readTimeout = 15000
+        c.readTimeout = 30000 // the service is sometimes slow: the player waits for the text instead of losing it
         c.setRequestProperty("x-goog-api-key", apiKey)
         c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         try {
