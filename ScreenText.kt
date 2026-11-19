@@ -27,10 +27,12 @@ import kotlin.math.abs
  * Channel logo corners and clocks are skipped too.
  */
 class ScreenTextWatcher(
-    private val projection: MediaProjection,
+    private val projection: MediaProjection?,
     private val widthPx: Int,
     private val heightPx: Int,
     private val dpi: Int,
+    /** frames from our own player (no screen capture needed) */
+    private val frames: (() -> Bitmap?)? = null,
     private val onText: (String) -> Unit,
 ) {
     private val thread = HandlerThread("tarjuman-screen").apply { start() }
@@ -45,6 +47,7 @@ class ScreenTextWatcher(
         // small capture keeps it light: ~640 px wide is plenty for letters filling the screen
         val w = 640
         val hgt = (640.0 * heightPx / widthPx).toInt().coerceAtLeast(240)
+        if (frames != null || projection == null) { h.postDelayed(tick, 1500); return }
         val r = ImageReader.newInstance(w, hgt, PixelFormat.RGBA_8888, 2)
         reader = r
         display = try {
@@ -64,8 +67,10 @@ class ScreenTextWatcher(
     }
 
     private fun look() {
-        val img = reader?.acquireLatestImage() ?: return
+        val own = frames
         val bmp: Bitmap
+        if (own != null) bmp = own() ?: return
+        else { val img = reader?.acquireLatestImage() ?: return
         try {
             val plane = img.planes[0]
             val rowPx = plane.rowStride / plane.pixelStride
@@ -74,7 +79,7 @@ class ScreenTextWatcher(
             bmp = if (rowPx != img.width) Bitmap.createBitmap(full, 0, 0, img.width, img.height) else full
         } finally {
             img.close()
-        }
+        } }
         val H = bmp.height.toFloat()
         val W = bmp.width.toFloat()
         val result = Tasks.await(recognizer.process(InputImage.fromBitmap(bmp, 0)), 3, TimeUnit.SECONDS)
