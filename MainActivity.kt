@@ -302,9 +302,14 @@ class MainActivity : Activity() {
 
     // ======================================================================= sources & preview
 
+    override fun onResume() {
+        super.onResume()
+        if (sources.none { it.key == iptvKey }) { Playlist.reset(); if (Playlist.channels(this).isNotEmpty()) loadSources() }
+    }
+
     private fun loadSources() {
-        val list = ArrayList(TvSource.sources(this))
-        if (Playlist.channels(this).isNotEmpty()) list.add(Source(iptvKey, "IPTV", emptyList(), null))
+        val list = ArrayList(TvSource.sources(this).filter { it.channels.isNotEmpty() })
+        if (Playlist.channels(this).isNotEmpty()) list.add(Source(iptvKey, "IP Channels", emptyList(), null))
         sources = list
         srcIdx = srcIdx.coerceIn(0, maxOf(0, sources.size - 1))
         showSource()
@@ -408,7 +413,13 @@ class MainActivity : Activity() {
     }
 
     private fun nextSource() {
-        if (sources.size < 2) { Toast.makeText(this, "لا يوجد مصدر آخر يتيحه الرسيفر", Toast.LENGTH_SHORT).show(); return }
+        if (sources.size < 2) {
+            // the receiver's IP channel list needs all-files access once
+            if (android.os.Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager() && Playlist.channels(this).isEmpty()) {
+                try { startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))); return } catch (_: Exception) { }
+            }
+            Toast.makeText(this, "لا يوجد مصدر آخر يتيحه الرسيفر", Toast.LENGTH_SHORT).show(); return
+        }
         srcIdx = (srcIdx + 1) % sources.size; chanIdx = 0
         showSource()
     }
