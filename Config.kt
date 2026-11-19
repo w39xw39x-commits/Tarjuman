@@ -107,8 +107,8 @@ object Prefs {
     fun keyAction(c: Context) = sp(c).getInt("kact", 0).coerceIn(0, Config.KEY_ACTIONS.size - 1)
     fun setKeyAction(c: Context, v: Int) = sp(c).edit().putInt("kact", v).apply()
 
-    fun screenText(c: Context) = sp(c).getBoolean("stext2", false) // off by default: no screen capture at all unless chosen
-    fun setScreenText(c: Context, v: Boolean) = sp(c).edit().putBoolean("stext2", v).apply()
+    fun screenText(c: Context) = sp(c).getBoolean("stext3", true) // place names / captions in the scene
+    fun setScreenText(c: Context, v: Boolean) = sp(c).edit().putBoolean("stext3", v).apply()
 
     /** Use ready-made subtitle files (perfect sync) when the programme is recognised. */
     fun readySubs(c: Context) = sp(c).getBoolean("ready2", true)
