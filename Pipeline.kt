@@ -157,6 +157,7 @@ class Pipeline(
                 val measured = (SystemClock.elapsedRealtime() - cues.first().spokenAt).toDouble()
                 delayMs = if (measured > delayMs) measured else delayMs * 0.85 + measured * 0.15
                 delayMs = delayMs.coerceIn(600.0, 9000.0)
+                Log.i("TJSYNC", "ready seq=${s.seq} measured=${measured.toLong()} delay=${delayMs.toLong()} n=${cues.size}")
             }
             while (true) {
                 val r = results.remove(next)
@@ -195,7 +196,8 @@ class Pipeline(
             var dur = max(c.spokenDur + 450, minRead)
             if (nextAt != null) dur = min(dur, max(nextAt - at - 60, 700L))
             dur = min(dur, 7000L)
-            ui.postDelayed({ if (!closed && !sync.showing && !sync.inBreak) overlay?.show(c.text, dur) }, max(0L, at - now))
+            val lateBy = at - c.spokenAt
+            ui.postDelayed({ if (!closed && !sync.showing && !sync.inBreak) { Log.i("TJSYNC", "live late=$lateBy dur=$dur ${c.text.take(40)}"); overlay?.show(c.text, dur) } }, max(0L, at - now))
         }
     }
 
