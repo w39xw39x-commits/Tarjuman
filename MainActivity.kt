@@ -633,6 +633,11 @@ class MainActivity : Activity() {
         }
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (k in satKeys) { nextSource(); return true }
+            if ((k == KeyEvent.KEYCODE_CHANNEL_UP || k == KeyEvent.KEYCODE_CHANNEL_DOWN) && sources.getOrNull(srcIdx)?.key == iptvKey) {
+                val n = Playlist.channels(this).size
+                if (n > 0) { chanIdx = (chanIdx + (if (k == KeyEvent.KEYCODE_CHANNEL_UP) 1 else -1) + n) % n; showSource() }
+                return true
+            }
             if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 && sources.getOrNull(srcIdx)?.key == iptvKey) {
                 digits.append(k - KeyEvent.KEYCODE_0)
                 Toast.makeText(this, "القناة $digits", Toast.LENGTH_SHORT).show()
