@@ -33,6 +33,7 @@ class StreamTee(val url: String) {
     private fun lockNotify() = (lock as java.lang.Object).notifyAll()
     @Volatile var delayMs: Long = 5000
     @Volatile private var closed = false
+    @Volatile private var conn: HttpURLConnection? = null
     private var total = 0L
 
     fun start() {
@@ -41,6 +42,7 @@ class StreamTee(val url: String) {
             while (!closed) {
                 try {
                     val c = URL(url).openConnection() as HttpURLConnection
+                    conn = c
                     c.connectTimeout = 6000; c.readTimeout = 8000
                     c.instanceFollowRedirects = true
                     c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Tarjuman/1.0")
@@ -61,6 +63,7 @@ class StreamTee(val url: String) {
                         }
                     }
                 } catch (e: Exception) { android.util.Log.w("TJPLAY", "tee error ${e.javaClass.simpleName}: ${e.message}") }
+                finally { try { conn?.disconnect() } catch (_: Exception) { }; conn = null } // really close the socket: the account allows one
                 android.util.Log.i("TJPLAY", "tee disconnected total=$total")
                 if (closed) break
                 try { Thread.sleep(backoff) } catch (_: InterruptedException) { break }
@@ -106,7 +109,11 @@ class StreamTee(val url: String) {
 
     val alive: Boolean get() = !closed
 
-    fun close() { closed = true; synchronized(lock) { lockNotify(); chunks.clear() } }
+    fun close() {
+        closed = true
+        conn?.let { c -> Thread { try { c.disconnect() } catch (_: Exception) { } }.start() }
+        synchronized(lock) { lockNotify(); chunks.clear() }
+    }
 }
 
 class TeeBase { @Volatile var value = -1L }
