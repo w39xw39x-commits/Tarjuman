@@ -47,6 +47,8 @@ class Pipeline(
     private var next = 0
     private val history = ArrayDeque<String>()
     private val langs = ArrayDeque<String>()
+    @Volatile private var prevAd = false
+    private val recent = ArrayDeque<Double>()
 
     /** Smoothed processing delay (speech end -> text ready). */
     private var delayMs = 2500.0
@@ -100,7 +102,9 @@ class Pipeline(
             if (spoken.isNotEmpty() && !stt.ad) { langs.addLast(spoken); while (langs.size > 8) langs.removeFirst() }
             d?.takeIf { it.value >= 4 }?.key
         }
-        if (stt.ad || (dominant != null && spoken.isNotEmpty() && spoken != dominant)) {
+        val wasAd = prevAd; prevAd = stt.ad
+        // one 'ad' verdict alone is not enough (dialogue can mention products): two in a row
+        if ((stt.ad && wasAd) || (dominant != null && spoken.isNotEmpty() && spoken != dominant)) {
             Log.i("TJSYNC", "skip ad=${stt.ad} lang=$spoken main=$dominant")
             return emptyList()
         }
@@ -167,8 +171,10 @@ class Pipeline(
             // fast-rising (catch up at once), slow-falling (no jitter)
             if (cues.isNotEmpty()) {
                 val measured = (SystemClock.elapsedRealtime() - cues.first().spokenAt).toDouble()
-                delayMs = if (measured > delayMs) measured else delayMs * 0.85 + measured * 0.15
-                delayMs = delayMs.coerceIn(600.0, 9000.0)
+                // keep the shift near the FAST answers; a slow answer is simply shown at once
+                recent.addLast(measured); while (recent.size > 8) recent.removeFirst()
+                val sorted = recent.sorted()
+                delayMs = sorted[(sorted.size * 0.3).toInt().coerceAtMost(sorted.size - 1)].coerceIn(600.0, 9000.0)
                 Log.i("TJSYNC", "ready seq=${s.seq} measured=${measured.toLong()} delay=${delayMs.toLong()} n=${cues.size}")
             }
             while (true) {
