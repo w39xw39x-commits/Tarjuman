@@ -343,7 +343,9 @@ class PlayerActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 && channels.isNotEmpty()) {
             digits.append(keyCode - KeyEvent.KEYCODE_0); showBanner("$digits")
-            ui.removeCallbacks(jump); ui.postDelayed(jump, 1400); return true
+            ui.removeCallbacks(jump)
+            if (digits.length >= channels.size.toString().length) jump.run() else ui.postDelayed(jump, 650)
+            return true
         }
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { if (channels.isNotEmpty()) play(index + 1); return true }
