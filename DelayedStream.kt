@@ -37,17 +37,17 @@ class StreamTee(private val url: String) {
 
     fun start() {
         thread(name = "tarjuman-tee", isDaemon = true) {
-            var backoff = 800L
+            var backoff = 300L
             while (!closed) {
                 try {
                     val c = URL(url).openConnection() as HttpURLConnection
-                    c.connectTimeout = 10000; c.readTimeout = 20000
+                    c.connectTimeout = 6000; c.readTimeout = 8000
                     c.instanceFollowRedirects = true
                     c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Tarjuman/1.0")
                     android.util.Log.i("TJPLAY", "tee connect code=${c.responseCode} type=${c.contentType} url=${c.url}")
                     c.inputStream.use { inp ->
                         val buf = ByteArray(64 * 1024)
-                        backoff = 800L
+                        backoff = 300L
                         while (!closed) {
                             val n = inp.read(buf)
                             if (n < 0) break
@@ -64,7 +64,7 @@ class StreamTee(private val url: String) {
                 android.util.Log.i("TJPLAY", "tee disconnected total=$total")
                 if (closed) break
                 try { Thread.sleep(backoff) } catch (_: InterruptedException) { break }
-                backoff = (backoff * 2).coerceAtMost(8000)
+                backoff = (backoff * 2).coerceAtMost(3000)
             }
         }
     }
