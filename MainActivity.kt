@@ -399,7 +399,10 @@ class MainActivity : Activity() {
             playerView = it; screen.addView(it, 0, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }
         val p = iptv ?: ExoPlayer.Builder(this).build().also { iptv = it; pv.player = it }
-        p.setMediaItem(MediaItem.fromUri(ch.url)); p.prepare(); p.playWhenReady = true
+        if (ch.url.contains(".m3u8", true)) p.setMediaItem(MediaItem.fromUri(ch.url))
+        else p.setMediaSource(androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(TeeDataSource.Factory(TeeHub.get(ch.url)) { 0L })
+            .createMediaSource(MediaItem.fromUri(ch.url)))
+        p.prepare(); p.playWhenReady = true
         infoBar.text = "●  ${i + 1}  ·  ${ch.name}"
     }
 
@@ -407,6 +410,7 @@ class MainActivity : Activity() {
         ui.removeCallbacks(zap)
         tvView?.let { try { it.reset() } catch (_: Exception) { }; screen.removeView(it) }
         tvView = null
+        if (iptv != null) TeeHub.idle()
         iptv?.release(); iptv = null
         playerView?.let { screen.removeView(it) }; playerView = null
     }
