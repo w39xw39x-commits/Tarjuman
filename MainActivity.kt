@@ -188,7 +188,11 @@ class MainActivity : Activity() {
                 addState(intArrayOf(), round(0x14F5C451, 24f, 0x59F5C451, 1f))
             }
             focusable(this, 1.03f)
-            setOnClickListener { Toggle.toggle(this@MainActivity); ui.postDelayed({ refresh() }, 600) }
+            setOnClickListener {
+                // IP channels: translate inside our own player, where the picture waits for the subtitles (exact sync)
+                if (!CaptureService.running && sources.getOrNull(srcIdx)?.key == iptvKey && Playlist.channels(this@MainActivity).isNotEmpty()) openFull()
+                else { Toggle.toggle(this@MainActivity); ui.postDelayed({ refresh() }, 600) }
+            }
         }
         val iconBox = FrameLayout(this).apply { background = round(0x2EF5C451, 14f) }
         iconBox.addView(icon(R.drawable.ic_translate, gold, 24f).apply {
