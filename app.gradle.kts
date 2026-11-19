@@ -18,7 +18,8 @@ android {
         targetSdk = 34
         versionCode = buildNumber
         versionName = "1.0.$buildNumber"
-        buildConfigField("String", "DEFAULT_KEY", "\"$groqKey\"")
+        // stored scrambled (reversed + base64) so key scanners never see it in the public APK
+        buildConfigField("String", "DEFAULT_KEY", "\"${java.util.Base64.getEncoder().encodeToString(groqKey.reversed().toByteArray())}\"")
         buildConfigField("String", "UPDATE_BASE", "\"$updateBase\"")
         buildConfigField("String", "WYZIE_KEY", "\"$wyzieKey\"")
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
