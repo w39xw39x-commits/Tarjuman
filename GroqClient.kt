@@ -27,6 +27,7 @@ class AiClient(private val key: String) {
         /** every model has its own free quota: when one is used up, the next answers */
         private val CHAIN = listOf("gemini-flash-lite-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-flash")
         private val coolUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        private val keyIdx = java.util.concurrent.atomic.AtomicInteger(0)
         private val LATEX = Regex("""\\?b?egin\{[^}]*\}|\\?end\{[^}]*\}|\{[a-z]+\}""")
     }
     private val base = "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -154,13 +155,32 @@ class AiClient(private val key: String) {
         return try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
     }
 
+    /** several keys (comma separated), each with its own free quota: when one is used up the next one answers */
+    private val keys = key.split(',', ';', ' ', '\n').map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(key) }
+
     private fun post(model: String, body: JSONObject): String {
+        var last: HttpError? = null
+        for (n in keys.indices) {
+            val i = (keyIdx.get() + n) % keys.size
+            try {
+                val r = postWith(keys[i], model, body)
+                if (n > 0) keyIdx.set(i)
+                return r
+            } catch (e: HttpError) {
+                if (e.code != 429 && e.code != 403) throw e
+                last = e
+            }
+        }
+        throw last ?: HttpError(429, 15, "quota")
+    }
+
+    private fun postWith(apiKey: String, model: String, body: JSONObject): String {
         val c = URL("$base$model:generateContent").openConnection() as HttpURLConnection
         c.requestMethod = "POST"
         c.doOutput = true
         c.connectTimeout = 8000
         c.readTimeout = 15000
-        c.setRequestProperty("x-goog-api-key", key)
+        c.setRequestProperty("x-goog-api-key", apiKey)
         c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         try {
             c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
