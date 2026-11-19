@@ -594,6 +594,12 @@ class MainActivity : Activity() {
 
     // ======================================================================= keys
 
+    private val digits = StringBuilder()
+    private val jump = Runnable {
+        val n = digits.toString().toIntOrNull(); digits.setLength(0)
+        if (n != null && n in 1..Playlist.channels(this).size) { chanIdx = n - 1; showSource() }
+    }
+
     private val satKeys = setOf(
         KeyEvent.KEYCODE_TV_SATELLITE, KeyEvent.KEYCODE_TV_SATELLITE_BS, KeyEvent.KEYCODE_TV_SATELLITE_CS,
         KeyEvent.KEYCODE_TV_SATELLITE_SERVICE, KeyEvent.KEYCODE_TV_INPUT, KeyEvent.KEYCODE_TV_ANTENNA_CABLE,
@@ -620,6 +626,11 @@ class MainActivity : Activity() {
         }
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (k in satKeys) { nextSource(); return true }
+            if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 && sources.getOrNull(srcIdx)?.key == iptvKey) {
+                digits.append(k - KeyEvent.KEYCODE_0)
+                Toast.makeText(this, "القناة $digits", Toast.LENGTH_SHORT).show()
+                ui.removeCallbacks(jump); ui.postDelayed(jump, 1400); return true
+            }
             if (adjusting != null) {
                 if (k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER) {
                     adjusting = null; refresh(); return true
