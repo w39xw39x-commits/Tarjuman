@@ -329,7 +329,17 @@ class PlayerActivity : Activity() {
         }
     }
 
+    private val digits = StringBuilder()
+    private val jump = Runnable {
+        val n = digits.toString().toIntOrNull(); digits.setLength(0)
+        if (n != null && n in 1..channels.size) play(n - 1)
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 && channels.isNotEmpty()) {
+            digits.append(keyCode - KeyEvent.KEYCODE_0); showBanner("$digits")
+            ui.removeCallbacks(jump); ui.postDelayed(jump, 1400); return true
+        }
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { if (channels.isNotEmpty()) play(index + 1); return true }
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { if (channels.isNotEmpty()) play(index - 1); return true }
