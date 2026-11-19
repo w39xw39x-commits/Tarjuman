@@ -22,7 +22,7 @@ import kotlin.concurrent.thread
  * So the viewer sees and hears everything a few seconds later than the listener,
  * and every translated line is ready BEFORE its sentence is spoken on screen.
  */
-class StreamTee(private val url: String) {
+class StreamTee(val url: String) {
     private class Chunk(val data: ByteArray, val pos: Long, val time: Long) { val end get() = pos + data.size }
 
     private val chunks = ArrayDeque<Chunk>()
@@ -98,11 +98,21 @@ class StreamTee(private val url: String) {
 
     fun oldestPos(): Long = synchronized(lock) { chunks.firstOrNull()?.pos ?: 0L }
 
+    /** First kept byte that is at most [ageMs] old (where a reader with that delay should start). */
+    fun posForAge(ageMs: Long): Long = synchronized(lock) {
+        val now = SystemClock.elapsedRealtime()
+        chunks.firstOrNull { now - it.time <= ageMs }?.pos ?: chunks.lastOrNull()?.pos ?: 0L
+    }
+
+    val alive: Boolean get() = !closed
+
     fun close() { closed = true; synchronized(lock) { lockNotify(); chunks.clear() } }
 }
 
+class TeeBase { @Volatile var value = -1L }
+
 @OptIn(UnstableApi::class)
-class TeeDataSource(private val tee: StreamTee, private val minAgeMs: () -> Long) : BaseDataSource(true) {
+class TeeDataSource(private val tee: StreamTee, private val minAgeMs: () -> Long, private val base: TeeBase = TeeBase()) : BaseDataSource(true) {
     private var uri: Uri? = null
     private var pos = 0L
     private var opened = false
@@ -110,7 +120,9 @@ class TeeDataSource(private val tee: StreamTee, private val minAgeMs: () -> Long
     override fun open(dataSpec: DataSpec): Long {
         uri = dataSpec.uri
         transferInitializing(dataSpec)
-        pos = maxOf(dataSpec.position, tee.oldestPos())
+        // first open: start where this reader's delay says; re-opens continue from the same base
+        pos = if (dataSpec.position == 0L || base.value < 0) tee.posForAge(minAgeMs()).also { base.value = it }
+              else maxOf(base.value + dataSpec.position, tee.oldestPos())
         opened = true
         transferStarted(dataSpec)
         return C.LENGTH_UNSET.toLong()
@@ -136,8 +148,28 @@ class TeeDataSource(private val tee: StreamTee, private val minAgeMs: () -> Long
     }
 
     class Factory(private val tee: StreamTee, private val minAgeMs: () -> Long) : DataSource.Factory {
-        override fun createDataSource(): DataSource = TeeDataSource(tee, minAgeMs)
+        private val base = TeeBase()
+        override fun createDataSource(): DataSource = TeeDataSource(tee, minAgeMs, base)
     }
+}
+
+/**
+ * Keeps ONE connection per channel for the whole app (preview + full screen share it):
+ * IPTV accounts usually allow a single connection, and reconnecting is slow.
+ */
+object TeeHub {
+    private var tee: StreamTee? = null
+    private val h = android.os.Handler(android.os.Looper.getMainLooper())
+    private val closer = Runnable { synchronized(TeeHub) { tee?.close(); tee = null } }
+
+    @Synchronized fun get(url: String): StreamTee {
+        h.removeCallbacks(closer)
+        tee?.let { if (it.url == url && it.alive) return it; it.close() }
+        return StreamTee(url).also { it.start(); tee = it }
+    }
+
+    /** Nobody is watching now: close the connection unless someone takes it again soon. */
+    fun idle() { h.removeCallbacks(closer); h.postDelayed(closer, 15000) }
 }
 
 /**
