@@ -15,6 +15,11 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
+import android.graphics.Bitmap
+import android.graphics.Outline
+import android.view.ViewOutlineProvider
+import android.widget.ImageView
+import android.widget.LinearLayout
 
 /** Text with a solid black outline and NO box behind it, so nothing in the scene is hidden. */
 class OutlineTextView(ctx: Context) : TextView(ctx) {
@@ -54,6 +59,8 @@ interface SubSink {
     fun flash(text: String, durationMs: Long = 2200)
     fun hideSubtitle()
     fun restyle()
+    /** Poster card (film / series recognised). */
+    fun card(poster: Bitmap?, title: String, info: String, durationMs: Long = 8000) {}
 }
 
 /** Draws the subtitle (bottom) and short status messages (top corner) above any app. */
@@ -134,10 +141,70 @@ class SubtitleOverlay(private val ctx: Context, private val type: Int) : SubSink
 
     override fun hideSubtitle() { main.post { main.removeCallbacks(hideSub); sub?.visibility = View.INVISIBLE } }
 
+    private var cardView: View? = null
+    private val hideCard = Runnable {
+        val v = cardView ?: return@Runnable
+        v.animate().alpha(0f).setDuration(450).withEndAction {
+            try { wm.removeView(v) } catch (_: Exception) { }
+            if (cardView === v) cardView = null
+        }.start()
+    }
+
+    override fun card(poster: Bitmap?, title: String, info: String, durationMs: Long) { main.post {
+        try {
+            cardView?.let { try { wm.removeView(it) } catch (_: Exception) { } }
+            val m = ctx.resources.displayMetrics
+            val box = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutDirection = View.LAYOUT_DIRECTION_RTL
+                val p = dp(12f).toInt(); setPadding(p, p, p, p)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(20f); setColor(0xB80B0E1A.toInt()); setStroke(dp(1f).toInt(), 0x33FFFFFF)
+                }
+            }
+            if (poster != null) box.addView(ImageView(ctx).apply {
+                setImageBitmap(poster); scaleType = ImageView.ScaleType.CENTER_CROP
+                clipToOutline = true
+                outlineProvider = object : ViewOutlineProvider() {
+                    override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(12f)) }
+                }
+            }, LinearLayout.LayoutParams(dp(96f).toInt(), dp(144f).toInt()))
+            val col = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16f).toInt(), 0, dp(8f).toInt(), 0)
+            }
+            col.addView(TextView(ctx).apply {
+                text = title; setTextColor(Color.WHITE); textSize = 21f; typeface = Typeface.DEFAULT_BOLD
+                maxWidth = dp(320f).toInt(); maxLines = 2
+            })
+            if (info.isNotBlank()) col.addView(TextView(ctx).apply {
+                text = info; setTextColor(0xFFF5C451.toInt()); textSize = 15f
+                setPadding(0, dp(8f).toInt(), 0, 0); maxWidth = dp(320f).toInt()
+            })
+            box.addView(col)
+            val lp = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.RIGHT
+                x = (m.widthPixels * 0.03).toInt(); y = (m.heightPixels * 0.06).toInt()
+            }
+            box.alpha = 0f
+            wm.addView(box, lp)
+            cardView = box
+            box.animate().alpha(1f).setDuration(400).start()
+            main.removeCallbacks(hideCard)
+            main.postDelayed(hideCard, durationMs)
+        } catch (_: Exception) { }
+    } }
+
     fun detach() = main.post {
         main.removeCallbacksAndMessages(null)
-        listOfNotNull(sub, status).forEach { try { wm.removeView(it) } catch (_: Exception) { } }
-        sub = null; status = null
+        listOfNotNull(sub, status, cardView).forEach { try { wm.removeView(it) } catch (_: Exception) { } }
+        sub = null; status = null; cardView = null
     }
 }
 
