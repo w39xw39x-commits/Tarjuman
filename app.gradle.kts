@@ -1,3 +1,4 @@
+import java.util.Base64
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -19,7 +20,7 @@ android {
         versionCode = buildNumber
         versionName = "1.0.$buildNumber"
         // stored scrambled (reversed + base64) so key scanners never see it in the public APK
-        buildConfigField("String", "DEFAULT_KEY", "\"${java.util.Base64.getEncoder().encodeToString(groqKey.reversed().toByteArray())}\"")
+        buildConfigField("String", "DEFAULT_KEY", "\"${Base64.getEncoder().encodeToString(groqKey.reversed().toByteArray())}\"")
         buildConfigField("String", "UPDATE_BASE", "\"$updateBase\"")
         buildConfigField("String", "WYZIE_KEY", "\"$wyzieKey\"")
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
