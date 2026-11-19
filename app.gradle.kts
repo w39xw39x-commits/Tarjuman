@@ -59,4 +59,21 @@ android {
 dependencies {
     // on-device text reading via Google Play services (keeps the APK small)
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+    // built-in player (IPTV) with delayed picture for perfectly synced subtitles
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
 }
+
+// Flat upload support: icon files uploaded next to the sources become drawables.
+// Phones sometimes turn "ic_x.xml" into "ic x.xml" - both are accepted.
+val copyFlatIcons = tasks.register<Copy>("copyFlatIcons") {
+    from(rootDir) {
+        include("ic_*.xml", "ic *.xml")
+        exclude("ic_launcher.xml", "ic_fg.xml", "ic_stat.xml", "ic launcher.xml", "ic fg.xml", "ic stat.xml")
+    }
+    rename { it.replace(' ', '_') }
+    into(layout.buildDirectory.dir("generated/flatIcons/drawable"))
+}
+android.sourceSets.getByName("main").res.srcDir(layout.buildDirectory.get().asFile.resolve("generated/flatIcons"))
+tasks.named("preBuild") { dependsOn(copyFlatIcons) }
