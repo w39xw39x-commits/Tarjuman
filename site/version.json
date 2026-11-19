@@ -1,10 +1,10 @@
 {
- "versionCode": 118,
- "versionName": "1.0.118",
+ "versionCode": 121,
+ "versionName": "1.0.121",
  "apk": "https://tarjuman-tv.netlify.app/Tarjuman.apk",
  "notes": [
-  "مزامنة تلقائية",
-  "لا تداخل في الترجمة",
-  "زر تزامن +/-"
+  "واجهة جديدة",
+  "شاشة القنوات",
+  "ترجمة أدق"
  ]
 }
