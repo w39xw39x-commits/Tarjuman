@@ -22,7 +22,13 @@ data class Stt(val segs: List<SttSeg>, val language: String, val ad: Boolean = f
  * translated, timed sentences in ONE request, so the delay is lower than STT + translation.
  */
 class AiClient(private val key: String) {
-    companion object { const val FALLBACK = "gemini-flash-lite-latest" }
+    companion object {
+        const val FALLBACK = "gemini-flash-lite-latest"
+        /** every model has its own free quota: when one is used up, the next answers */
+        private val CHAIN = listOf("gemini-flash-lite-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-flash")
+        private val coolUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        private val LATEX = Regex("""\\?b?egin\{[^}]*\}|\\?end\{[^}]*\}|\{[a-z]+\}""")
+    }
     private val base = "https://generativelanguage.googleapis.com/v1beta/models/"
     @Volatile private var thinkingOff = false // current Flash-Lite answers fast without it
 
@@ -58,7 +64,7 @@ class AiClient(private val key: String) {
         for (i in 0 until lines.length()) {
             val o = lines.optJSONObject(i) ?: continue
             val src = Filters.clean(o.optString("src")) ?: continue
-            val tr = o.optString("tr").replace(Regex("""\\?b?egin\{[^}]*}|\\?end\{[^}]*}|\{[a-z]+}"""), "").trim().trim('"', '«', '»', '“', '”').trim()
+            val tr = o.optString("tr").replace(LATEX, "").trim().trim('"', '«', '»', '“', '”').trim()
             if (tr.isEmpty()) continue
             val s = (o.optDouble("start", 0.0) * 1000).toLong().coerceAtLeast(0)
             val e = (o.optDouble("end", 0.0) * 1000).toLong().coerceAtLeast(s + 300)
@@ -123,7 +129,19 @@ class AiClient(private val key: String) {
                     post(model, body)
                 }
                 // strong model busy or missing: the fast model answers instead
-                (e.code == 503 || e.code == 404 || e.code == 429) && model != FALLBACK -> post(FALLBACK, body)
+                e.code == 503 || e.code == 404 || e.code == 429 -> {
+                    coolUntil[model] = System.currentTimeMillis() + (if (e.code == 404) 3600_000L else e.retryAfterSec * 1000L + 20_000L)
+                    var last: Exception = e
+                    var ok: String? = null
+                    for (m in CHAIN) {
+                        if (m == model || (coolUntil[m] ?: 0L) > System.currentTimeMillis()) continue
+                        try { ok = post(m, body); break } catch (x: HttpError) {
+                            last = x
+                            coolUntil[m] = System.currentTimeMillis() + (if (x.code == 404) 3600_000L else x.retryAfterSec * 1000L + 20_000L)
+                        }
+                    }
+                    ok ?: throw last
+                }
                 else -> throw e
             }
         }
