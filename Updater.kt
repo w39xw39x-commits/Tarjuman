@@ -108,7 +108,8 @@ class UpdateActivity : Activity() {
             }
         }
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        head.addView(ImageView(this).apply { setImageResource(R.drawable.ic_fg) }, LinearLayout.LayoutParams(dp(60f), dp(60f)))
+        head.addView(ImageView(this).apply { setImageResource(R.drawable.logo); adjustViewBounds = true },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(44f)))
         head.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12f), 0, dp(12f), 0)

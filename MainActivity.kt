@@ -170,9 +170,11 @@ class MainActivity : Activity() {
 
         // header
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        head.addView(ImageView(this).apply { setImageResource(R.drawable.ic_fg); scaleX = 1.35f; scaleY = 1.35f }, LinearLayout.LayoutParams(dpi(46f), dpi(46f)))
-        val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dpi(10f), 0, dpi(10f), 0) }
-        titles.addView(txt("ترجمان", 24f, ink, 2))
+        val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dpi(4f), 0, dpi(10f), 0) }
+        // the logo is the app's name: no separate title text
+        titles.addView(ImageView(this).apply {
+            setImageResource(R.drawable.logo); adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_START
+        }, LinearLayout.LayoutParams(WRAP_CONTENT, dpi(40f)))
         titles.addView(txt("ترجمة فورية متزامنة", 13f, muted).apply { setPadding(0, dpi(4f), 0, 0) })
         head.addView(titles, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         statusPill = txt("", 13f, green, 1).apply { setPadding(dpi(12f), dpi(7f), dpi(12f), dpi(7f)) }

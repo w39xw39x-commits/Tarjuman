@@ -29,10 +29,11 @@ jobs:
             "ic_launcher.xml": R + "/mipmap-anydpi-v26",
             "strings.xml": R + "/values",
             "accessibility_config.xml": R + "/xml",
-            "banner.xml": R + "/drawable", "ic_fg.xml": R + "/drawable", "ic_stat.xml": R + "/drawable",
             "proguard-rules.pro": "app", "release.jks": "app",
-            "index.html": "site", "icon.svg": "site", "_headers": "site",
+            "index.html": "site", "_headers": "site",
           }
+          # the app logo (transparent PNGs): one size for every screen density
+          images = {"logo.png", "logo_fg.png", "banner.png", "ic_stat.png"}
           def move(src, folder, name=None):
               os.makedirs(folder, exist_ok=True)
               shutil.copy(src, os.path.join(folder, name or os.path.basename(src)))
@@ -41,6 +42,9 @@ jobs:
               if f.endswith(".kt"): move(f, J)
               elif f.endswith((".ttf", ".otf")): move(f, R + "/font")
               elif f == "app.gradle.kts": move(f, "app", "build.gradle.kts")
+              elif f in images:
+                  move(f, R + "/drawable-nodpi")
+                  if f == "logo.png": move(f, "site")
               elif f in rules: move(f, rules[f])
           for p in sorted(glob.glob("app/**/*", recursive=True)): print(p)
           PY
