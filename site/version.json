@@ -1,11 +1,11 @@
 {
- "versionCode": 171,
- "versionName": "1.0.171",
+ "versionCode": 172,
+ "versionName": "1.0.172",
  "apk": "https://raw.githubusercontent.com/w39xw39x-commits/Tarjuman/main/site/Tarjuman.apk",
  "notes": [
+  "شعار ترجمان الجديد في كل التطبيق",
   "ترجمات جاهزة من مصادر أكثر",
   "إصلاح الحروف العربية غير المقروءة في بعض الملفات",
-  "تجاهل ملفات الترجمة بلغة خاطئة",
   "تحسينات"
  ]
 }
