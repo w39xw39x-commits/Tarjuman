@@ -62,6 +62,7 @@ jobs:
           gradle :app:assembleRelease --no-daemon
           -PGROQ_KEY="${{ secrets.GEMINI_API_KEY }}"
           -PWYZIE_KEY="${{ secrets.WYZIE_API_KEY }}"
+          -PSUBDL_KEY="${{ secrets.SUBDL_API_KEY }}"
           -PBUILD_NUMBER=$((100 + ${{ github.run_number }}))
 
       - name: Put APK + version.json into site/

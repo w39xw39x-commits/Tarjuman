@@ -6,6 +6,7 @@ plugins {
 
 val groqKey: String = (project.findProperty("GROQ_KEY") as String?) ?: ""
 val wyzieKey: String = (project.findProperty("WYZIE_KEY") as String?) ?: ""
+val subdlKey: String = (project.findProperty("SUBDL_KEY") as String?) ?: ""
 val updateBase: String = (project.findProperty("UPDATE_BASE") as String?) ?: ""
 val buildNumber: Int = ((project.findProperty("BUILD_NUMBER") as String?) ?: "1").toInt()
 
@@ -23,6 +24,7 @@ android {
         buildConfigField("String", "DEFAULT_KEY", "\"${Base64.getEncoder().encodeToString(groqKey.reversed().toByteArray())}\"")
         buildConfigField("String", "UPDATE_BASE", "\"$updateBase\"")
         buildConfigField("String", "WYZIE_KEY", "\"$wyzieKey\"")
+        buildConfigField("String", "SUBDL_KEY", "\"$subdlKey\"")
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 

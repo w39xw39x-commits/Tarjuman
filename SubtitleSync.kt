@@ -45,6 +45,7 @@ class SubtitleSync(
 
     private val app = ctx.applicationContext
     private val key = BuildConfig.WYZIE_KEY
+    private val sources = SubtitleSources(key, BuildConfig.SUBDL_KEY)
     private val io = Executors.newSingleThreadExecutor()
     private val translator = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
@@ -202,21 +203,16 @@ class SubtitleSync(
 
     private fun load(id: String, imdb: String, season: Int, episode: Int, name: String, off: Long, srcLang: String) {
         val target = Prefs.target(app)
-        val base = "https://sub.wyzie.io/search?id=${enc(imdb)}" +
-            (if (season > 0) "&season=$season&episode=$episode" else "") +
-            "&format=srt&sort=downloads&key=${enc(key)}"
-        var file: List<FileCue>? = null
-        var translate = false
-        // 1) human subtitles in the viewer's language
-        getJsonArray("$base&language=${target.code}")?.let { pickAndDownload(it, preferHuman = true) }?.let { file = it }
-        // 2) otherwise the original-language file, translated ahead of time
-        if (file == null && srcLang.length == 2 && srcLang != target.code) {
-            getJsonArray("$base&language=$srcLang")?.let { pickAndDownload(it, preferHuman = true) }?.let { file = it; translate = true }
-        }
-        val f = file ?: return
+        // several sites, best first; each file decoded and checked to really be in that language
+        val found = sources.find(imdb, season, episode, name, target, srcLang) ?: return
+        val f = found.cues
+        val translate = found.needsTranslation
+        // original-language lines of the same film, only to recognise ad breaks quickly
         val match: List<FileCue> = if (!translate && srcLang.length == 2 && srcLang != target.code)
-            getJsonArray("$base&language=$srcLang")?.let { pickAndDownload(it, preferHuman = true) } ?: emptyList()
+            sources.human(imdb, season, episode, srcLang)?.cues ?: emptyList()
         else emptyList()
+        Log.i("TJSYNC", "subtitles from ${found.source}" +
+            (if (translate) " (translated ahead)" else "") + (if (found.machine) " (machine-translated)" else ""))
         synchronized(this) {
             if (closed) return
             mediaId = id; title = name; offsetMs = off
@@ -226,24 +222,10 @@ class SubtitleSync(
         Log.i("TJSYNC", "LOCKED $name off=$off cues=${f.size}")
         onTakeOver()
         lockedAt = SystemClock.elapsedRealtime()
-        overlay?.flash("✓ ترجمة جاهزة: $name", 3500)
+        overlay?.flash("✓ ترجمة جاهزة: $name" + (if (found.machine) " (آلية)" else ""), 3500)
         val pid = id; val pname = name
         Thread { Poster.show(overlay, pid, pname) }.start()
         startTicker()
-    }
-
-    private fun pickAndDownload(arr: JSONArray, preferHuman: Boolean): List<FileCue>? {
-        val list = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
-            .filter { it.optString("url").isNotBlank() && !it.optBoolean("isHearingImpaired", false) }
-        val ordered = if (preferHuman) list.sortedBy { if (it.optBoolean("ai", false)) 1 else 0 } else list
-        for (o in ordered.take(3)) {
-            var url = o.optString("url")
-            if (!url.contains("key=")) url += (if (url.contains('?')) "&" else "?") + "key=" + enc(key)
-            val text = getText(url) ?: continue
-            val c = Srt.parse(text)
-            if (c.size >= 20) return c
-        }
-        return null
     }
 
     // ------------------------------------------------------------------ fine tuning & display
